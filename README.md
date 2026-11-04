@@ -314,9 +314,12 @@ one color, since they print together.
   (screwed inside the back wall, 2×2 holes), the Hinge Top file is the lid side (one central plate
   on S/M, two plates on L/XL), the Rods file is both pins; all knuckles share one axis at rim
   height ~8 mm behind the back wall, and the lid pivots on it. Latches are placed from measured
-  geometry too: the holder screwed flat to the facade (holes 61.4 × 9 mm), its pivot boss through
-  the lever's slot, the lever resting on the holder with its hook in the lid's catch notch; link and
-  pins inside. Label,
+  geometry and the parts' embossed "UP" markers. Each facade has a 4.1 mm latch pocket on its
+  front, notched at the top edge. The holder plate sits behind the facade, screwed through its
+  61.4 × 9 mm holes, and its pivot boss comes forward through the notch. The link hangs from the
+  boss, and the lever's knuckle hangs from the link. The lever is a tray whose walls rest in the
+  pocket, and its hook reaches back over the lid's catch bump, its top roughly level with the lid's.
+  Label,
   gridfinity baseplate, dividers with counts (across, front-back, sealed rows).
 - **Base & back:** base connector (split bases), feet, tyres, hubs (disk, cover, bushing),
   backbone boards (full width or universal), module connectors, pegboard attachments, wall

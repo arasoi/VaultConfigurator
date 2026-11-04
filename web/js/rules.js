@@ -667,8 +667,21 @@ const HINGE_AXIS = { dy: -0.6, dz: -8.1, dyLid: -6.9 };
 
 /** Sustainer latch centers along the facade (S/M: one, L/XL: two). */
 export const SUSTAINER_LOCK_X = { S: [0], M: [0], L: [-82.4, 82.4], XL: [-127, 127] };
-/** Lock holder center below the facade top edge (1F facades are shorter). */
-const LOCK_HOLDER_DROP = { 1: 11.7, 2: 17.7, 4: 17.7 };
+/** Lock holder centre below the facade top edge (from the facade's 61.4 × 9 mm screw holes). */
+const LOCK_HOLDER_DROP = { 1: 11.5, 2: 17.5, 4: 17.5 };
+/**
+ * Sustainer latch geometry, measured on the STLs (preview frames; file x is the
+ * part's up axis, y its depth, z its width):
+ * - holder: 5 mm plate (y -9.5..-4.5) behind the facade, screwed through it; its
+ *   30 mm pivot boss pokes forward through the facade's top notch. Pivot bore at
+ *   (x -3, y 6). "UP" markers on the plate back and the boss shoulder: file −x is up.
+ * - link (inner part): U-shaped, ear holes (x 8) on the boss pivot, bar bore (x −7.5)
+ *   on the lever's knuckle: 15.5 mm between them.
+ * - lever (outer part): a tray, open towards the facade, its walls resting in the
+ *   facade's 4.1 mm pocket; the hook at the top reaches back over the lid's catch
+ *   bump. Knuckle bore at x −22 (1F) / −25 (2-4F), y 2. "UP" marker: file +x is up.
+ */
+const LATCH = { pocket: 4.1, holderPlateFront: -4.5, pivot: [-3, 6], link: 15.5, linkEar: 8, knuckle: { 1: -22, 2: -25 }, knuckleY: 2 };
 
 /**
  * Boxes stacked inside a drawer module, bottom to top: e.g. a 4F module can
@@ -1056,21 +1069,33 @@ function resolveSustainer({ size, F, d, D, col, slot, build, parts, addBom, addH
   addBom(inner, locks.length, 'Sustainers', 'latch');
   addBom(outer, locks.length, 'Sustainers', 'latch lever');
   addBom(pins, locks.length, 'Sustainers', 'one set per latch');
+  // Closed latch (see LATCH). Frames map file z -> X, x -> Y (up), y -> Z (out);
+  // the holder is turned over (its UP markers say file −x is up).
   const drop = LOCK_HOLDER_DROP[F];
-  // Measured latch (closed): the holder plate is screwed flat to the facade
-  // front (holes 61.4 × 9 mm); its pivot boss sits 3 mm below the holder's
-  // centre and pokes through the lever's slot. The lever's back rests on the
-  // holder plate (4.5 mm out) and its hook reaches back into the lid's catch
-  // groove, the hook landing on the lid ledge. The link pivots on the boss,
-  // inside the lever. Frames: file z -> X, x -> Y (up), y -> Z (out).
   const LATCH_ROWS = [[0, 0, 1], [1, 0, 0], [0, 1, 0]];
-  const slotC = F === 1 ? -6.5 : -9.5; // lever slot centre along the lever (file x)
+  const HOLDER_ROWS = [[0, 0, -1], [-1, 0, 0], [0, 1, 0]];
+  // Holder pivot, relative to the facade's top edge and front face.
+  const pivotY = -drop - LATCH.pivot[0];
+  const pivotZ = -FIT.facadeT + (LATCH.pivot[1] - LATCH.holderPlateFront);
+  // Lever: walls on the pocket floor; its knuckle hangs on the link below the pivot.
+  const knuckleZ = -LATCH.pocket + LATCH.knuckleY;
+  const dz = knuckleZ - pivotZ;
+  const dy = Math.sqrt(LATCH.link ** 2 - dz ** 2);
+  const knuckleY = pivotY - dy;
+  const cosL = dy / LATCH.link;
+  const sinL = dz / LATCH.link;
+  // Link: ears (file +x) up at the pivot, bar down at the lever's knuckle.
+  const LINK_ROWS = [
+    [0, 0, 1],
+    [cosL, sinL, 0],
+    [-sinL, cosL, 0],
+  ];
   for (const lx of locks) {
-    const at = (y, z) => ({ to: fp.key, x: lx, yRef: 'top', y, zRef: 'front', z });
-    place({ partId: holder?.id, role: 'lockholder', attach: at(-drop, 0), xform: { origin: [0, 0, -9.5], rows: LATCH_ROWS } });
-    place({ partId: inner?.id, role: 'lockinner', attach: at(-drop - 3, 8.5), xform: { origin: [-7, 0, 0], rows: LATCH_ROWS } });
-    place({ partId: pins?.id, role: 'lockinner', attach: at(-drop - 3, 8.5), xform: { origin: [0, 0, 0], rows: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] } });
-    place({ partId: outer?.id, role: 'lockouter', attach: at(-drop - 3, 4.5), xform: { origin: [slotC, 0, 0], rows: LATCH_ROWS } });
+    const at = (y, z, zRef = 'front') => ({ to: fp.key, x: lx, yRef: 'top', y, zRef, z });
+    place({ partId: holder?.id, role: 'lockholder', attach: at(-drop, 0, 'back'), xform: { origin: [0, LATCH.holderPlateFront, 0], rows: HOLDER_ROWS } });
+    place({ partId: inner?.id, role: 'lockinner', attach: at(pivotY, pivotZ), xform: { origin: [LATCH.linkEar, 0, 0], rows: LINK_ROWS } });
+    place({ partId: pins?.id, role: 'lockinner', attach: at(knuckleY, knuckleZ), xform: { origin: [0, 0, 0], rows: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] } });
+    place({ partId: outer?.id, role: 'lockouter', attach: at(knuckleY, knuckleZ), xform: { origin: [LATCH.knuckle[F === 1 ? 1 : 2], LATCH.knuckleY, 0], rows: LATCH_ROWS } });
   }
 
   const slabel = uni(/^Label for Sustainers/);
@@ -1440,8 +1465,9 @@ export const ORIENT_BY_ROLE = {
   // Stacking parts (module, smodule, roof, lid, base) are oriented from their
   // connecting geometry in orient.js; these entries are only the fallback.
   smodule: { z: 180 },
-  // Sustainer facades: lock-holder screw holes belong on the front, near the top.
-  sfacade: { x: 180 },
+  // Sustainer facades: the latch pockets (4.1 mm deep, notched at the top edge
+  // for the holder's boss) face out, with the lock-holder screw holes near the top.
+  sfacade: { z: 180 },
   // Hinge leaves: knuckle at the rim, leaf hanging down the back wall.
   hinge: { x: 180 },
   // Sustainer lids come out upside down. Flip around Z (front-back axis) so the
