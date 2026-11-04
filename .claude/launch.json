@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vault-configurator",
+      "runtimeExecutable": "go",
+      "runtimeArgs": ["run", ".", "-data", "Data", "-web", "web", "-addr", ":8080"],
+      "port": 8080
+    }
+  ]
+}

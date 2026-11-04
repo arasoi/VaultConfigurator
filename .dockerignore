@@ -1,0 +1,5 @@
+Data/
+cache/
+.claude/
+vault-configurator
+*.zip

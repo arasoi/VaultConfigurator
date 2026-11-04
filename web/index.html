@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VAULT Configurator</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='7' rx='2' fill='%23f07c2c'/%3E%3Crect x='4' y='13' width='24' height='7' rx='2' fill='%23888'/%3E%3Crect x='4' y='22' width='24' height='7' rx='2' fill='%23888'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="css/app.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three/three.module.min.js",
+          "three/addons/": "./vendor/three/addons/"
+        }
+      }
+    </script>
+    <script type="module" src="js/main.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand"><span class="logo" aria-hidden="true"></span>VAULT <small>Configurator</small></div>
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="build" aria-selected="true">Build</button>
+        <button role="tab" data-tab="library" aria-selected="false">Parts library</button>
+        <button role="tab" data-tab="docs" aria-selected="false">Documentation</button>
+      </nav>
+      <div class="spacer"></div>
+      <button class="icon-btn" id="theme-toggle" title="Toggle light / dark">◐</button>
+    </header>
+
+    <main>
+      <!-- Build -->
+      <section class="tab-page active" id="tab-build">
+        <aside class="panel" id="config" aria-label="Build options"></aside>
+        <div class="stage">
+          <div class="viewer" id="viewer"></div>
+          <div class="viewer-toolbar">
+            <label class="toggle"><input type="checkbox" id="opt-open" /> Open drawers &amp; lids</label>
+            <label class="slider">Explode <input type="range" id="opt-explode" min="0" max="1" step="0.05" value="0" /></label>
+            <button class="btn ghost" id="btn-fit">Fit view</button>
+            <button class="btn ghost" id="btn-snap">Snapshot</button>
+          </div>
+          <div class="viewer-status" id="status" hidden></div>
+          <div class="dims" id="dims"></div>
+          <div class="pick-card" id="pick" hidden></div>
+        </div>
+        <aside class="panel" id="bom" aria-label="Parts list"></aside>
+      </section>
+
+      <!-- Library -->
+      <section class="tab-page" id="tab-library">
+        <aside class="panel" id="lib-list" aria-label="All parts"></aside>
+        <div class="stage">
+          <div class="viewer" id="lib-viewer"></div>
+          <div class="viewer-toolbar">
+            <span class="muted">Rotate 90°</span>
+            <button class="btn ghost" data-rot="x">X</button>
+            <button class="btn ghost" data-rot="y">Y</button>
+            <button class="btn ghost" data-rot="z">Z</button>
+            <button class="btn ghost" id="lib-fit">Fit view</button>
+          </div>
+          <div class="viewer-status" id="lib-status" hidden></div>
+          <div class="pick-card" id="lib-info" hidden></div>
+          <div class="empty-hint" id="lib-empty">Pick a part on the left to preview it.</div>
+        </div>
+      </section>
+
+      <!-- Docs -->
+      <section class="tab-page" id="tab-docs">
+        <div class="docs" id="docs"></div>
+      </section>
+    </main>
+  </body>
+</html>

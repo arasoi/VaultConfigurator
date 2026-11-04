@@ -1,0 +1,11 @@
+/cache/
+/vault-configurator
+/vault-configurator.exe
+/dist/
+.DS_Store
+# The VAULT files (~26 GB) are not source; point -data at them.
+/Data/
+
+# Local Claude Code settings
+.claude/settings.local.json
+*.zip
