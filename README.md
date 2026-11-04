@@ -342,6 +342,6 @@ different mesh resolution).
 
 ## License
 
-The code in this repository is the project's own. three.js in `web/vendor/three` is MIT licensed
+The code in this repository is released under the [MIT License](LICENSE). three.js in `web/vendor/three` is MIT licensed
 (see its `LICENSE`). The VAULT design, its STL files, manuals and images belong to their creator,
 aren't covered by this repository, and need their own license.
