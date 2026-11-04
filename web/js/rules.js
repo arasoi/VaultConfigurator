@@ -105,6 +105,17 @@ export const PEGBOARDS = [
 /** Base rod lengths for wheels (manual: hardware list). */
 const ROD_LEN = { S: 248, M: 338, L: 414, XL: 504 };
 
+/**
+ * Pull-out handle: x of the two vertical M16 rods (Ø17 holes) from the centre,
+ * measured on the backbone boards, the handle lock and the handle legs (all
+ * agree; = W/2 − 42). Universal boards have the hole 10.5 mm inboard of centre.
+ */
+export const ROD_X = { S: 40, M: 85, L: 123, XL: 167 };
+/** Handle lock knobs sit in Ø34 pockets 17.5 mm inboard of each rod (S: one knob in Part 2). */
+const LOCK_KNOB_IN = 17.5;
+/** Universal handle lock: rod hole 2.5 mm outboard of the part's centre (89.1 wide). */
+const ULOCK_ROD_OFF = 2.5;
+
 // ---------------------------------------------------------------- defaults
 
 let uid = 0;
@@ -406,15 +417,81 @@ export function resolve(build, parts) {
     : parts.findAll({ category: 'modifications', group: 'Backbone', size: W, name: /Backbone$/ }).flatMap((p) => p.heights || []);
   // Universal boards are narrow: one at each side instead of one full-width board.
   const bbCols = universal ? [-(WIDTH[W] / 2 - 31.55), WIDTH[W] / 2 - 31.55] : [0];
+  // Boards in placement order (bottom to top within a level); the stationary
+  // handle bolts to the topmost one.
+  const boards = [];
+  let lockKey = null;
+  // Handle lock: takes the place of the top 1F backbone board. The M16 rods
+  // run through it and the boards below; a knob in a pocket next to each rod
+  // clamps it (tightened by an M4 35mm hex bolt from the module side).
+  const placeHandleLock = (li) => {
+    const knob1 = parts.find({ category: 'modifications', name: /^Handle Lock Knob Part 1/ });
+    const knob2 = parts.find({ category: 'modifications', name: /^Handle Lock Knob Part 2/ });
+    const addKnob = (hostKey, x) => {
+      addBom(knob1, 1, 'Backbone & handles', 'handle lock knob');
+      addBom(knob2, 1, 'Backbone & handles', 'knob cap');
+      addHw('M4 35mm hex bolt', 1);
+      // Knob Part 1 is a Ø34 × 7.3 disc with a 28 × 10 stem (14.7 long). The
+      // disc's flat face goes into the 6 mm deep pocket; the stem points out.
+      const kp = place({ partId: knob1?.id, role: 'knob', mount: 'front', attach: { to: hostKey, x, zRef: 'back', z: 6, zAlign: 'out' }, expect: [34, 34, 22] });
+      // Part 2 is the grip: a sleeve over the stem, open end towards the disc,
+      // closed end 1.5 mm past the stem's end.
+      place({ partId: knob2?.id, role: 'keycap', mount: 'back', attach: { to: kp.key, zRef: 'back', z: 11.7 - 1.5, zAlign: 'out' }, expect: [37.8, 13.2, 11.7] });
+    };
+    const rodX = ROD_X[W];
+    if (universal) {
+      // One narrow lock per side, outer edge flush with the module; the file is
+      // the right-hand one (knob inboard of the rod), turned over for the left.
+      const lock = parts.find({ category: 'modifications', name: /^Universal Pull-out Handle Lock/ });
+      if (!lock) missing('universal pull-out handle lock');
+      let first = null;
+      for (const side of [-1, 1]) {
+        addBom(lock, 1, 'Backbone & handles');
+        addHw('M4 60–100mm bolt', 4);
+        const lp = place({
+          partId: lock?.id,
+          placeholder: !lock,
+          role: 'handlelock',
+          slot: { level: li },
+          bx: side * (rodX - ULOCK_ROD_OFF),
+          rot: side < 0 ? { z: 180 } : null,
+          expect: [89.1, 47, 35],
+        });
+        first ??= lp.key;
+        addKnob(lp.key, -side * (LOCK_KNOB_IN - ULOCK_ROD_OFF));
+      }
+      return first;
+    }
+    const lock = parts.find({ category: 'modifications', group: 'Backbone', size: W, name: /Pull-out Handle Lock$/ });
+    if (!lock) missing(`${W} pull-out handle lock`);
+    addBom(lock, 1, 'Backbone & handles');
+    addHw('M4 60–100mm bolt', 4);
+    const lp = place({ partId: lock?.id, placeholder: !lock, role: 'handlelock', slot: { level: li }, bx: 0, expect: [WIDTH[W], 47, 35] });
+    const part2 = parts.find({ category: 'modifications', group: 'Backbone', size: W, name: /Pull-out Handle Lock Part 2/ });
+    if (part2) {
+      // S: the rods are too close for two knobs; Part 2 clamps both rods
+      // (half-holes at its ends) with one knob in the middle.
+      addBom(part2, 1, 'Backbone & handles');
+      const p2 = place({ partId: part2.id, role: 'handlelock', attach: { to: lp.key, zRef: 'back', z: 0, zAlign: 'out' }, expect: [80.4, 47, 15] });
+      addKnob(p2.key, 0);
+    } else {
+      for (const s of [-1, 1]) addKnob(lp.key, s * (rodX - LOCK_KNOB_IN));
+    }
+    return lp.key;
+  };
   levels.forEach((lv, li) => {
     if (wallOrBack) {
-      for (const h of splitHeight(lv.height, bbAvail)) {
+      // With the pull-out handle, the handle lock (1F tall) replaces the top
+      // 1F of backbone on the top level (manual: Modifications 13–15).
+      const lockHere = build.pullHandle && li === levels.length - 1;
+      for (const h of splitHeight(lockHere ? lv.height - 1 : lv.height, bbAvail)) {
         const bb = bbParts(h);
         if (!bb) missing(`${universal ? 'universal' : W}${h}F backbone`);
         for (const bx of bbCols) {
           addBom(bb, 1, 'Backbone & handles');
           addHw('M4 60–100mm bolt', 4);
           const bp = place({ partId: bb?.id, placeholder: !bb, role: 'backbone', slot: { level: li }, bx, expect: [universal ? 63.1 : WIDTH[W], 48 * h - 1, FIT.backboneT] });
+          boards.push({ key: bp.key, bx, h });
           if (build.connectors) {
             // Connectors for modules: tie this level to the next at the board ends.
             const cn = parts.find({ category: 'modifications', group: 'Backbone', height: h, name: /^Connector for Modules/ });
@@ -426,6 +503,7 @@ export function resolve(build, parts) {
           }
         }
       }
+      if (lockHere) lockKey = placeHandleLock(li);
       if (build.pegboard !== 'none') {
         const folder = build.pegboard === 'ikea' ? /IKEA/ : /USSA Pegboard/;
         const pAvail = parts.findAll({ category: 'modifications', group: 'Pegboard Attachment', size: W, path: folder }).flatMap((p) => p.heights || []);
@@ -458,40 +536,29 @@ export function resolve(build, parts) {
     addHw('M6 35mm bolt', 2);
     addHw('M6x8x8 heat insert', 2);
     addHw('M16 threaded rod (tower height)', 2);
-    place({ partId: ph?.id, role: 'pullhandle', expect: [null, FIT.backboneT + 2, null] });
-    // M16 rods the handle slides on (drawn as cylinders, not printed).
+    // An upside-down U in the plane of the back: grip on top, legs down onto
+    // the rods (M6 bolts through the leg ends into the tapped rods).
+    place({ partId: ph?.id, role: 'pullhandle', expect: [null, 61.5, 35] });
+    // M16 rods the handle slides on (drawn as cylinders, not printed); they run
+    // through the backbone boards and the handle lock (placed in the level loop).
     place({ placeholder: true, role: 'rod', side: -1, fixedColor: true });
     place({ placeholder: true, role: 'rod', side: 1, fixedColor: true });
-    // Handle lock: a bar on the top backbone with a lock knob at each rod.
-    const locks = universal
-      ? [parts.find({ category: 'modifications', name: /^Universal Pull-out Handle Lock/ })]
-      : parts.findAll({ category: 'modifications', group: 'Backbone', size: W, name: /Pull-out Handle Lock$/ });
-    const lockPart2 = universal ? null : parts.find({ category: 'modifications', group: 'Backbone', size: W, name: /Pull-out Handle Lock Part 2/ });
-    const knob1 = parts.find({ category: 'modifications', name: /^Handle Lock Knob Part 1/ });
-    const knob2 = parts.find({ category: 'modifications', name: /^Handle Lock Knob Part 2/ });
-    const rodX = (WIDTH[W] * 0.7) / 2 - 22;
-    for (const lock of locks.filter(Boolean)) {
-      for (const bx of universal ? [-rodX, rodX] : [0]) {
-        addBom(lock, 1, 'Backbone & handles');
-        const lp = place({ partId: lock.id, role: 'handlelock', slot: { level: levels.length - 1 }, bx, expect: [universal ? 89.1 : WIDTH[W], 35, 47] });
-        if (lockPart2) {
-          addBom(lockPart2, 1, 'Backbone & handles');
-          place({ partId: lockPart2.id, role: 'handlelock', attach: { to: lp.key, zRef: 'back', z: 0, zAlign: 'out' }, expect: [80.4, 47, 15] });
-        }
-        for (const kx of universal ? [0] : [-rodX, rodX]) {
-          addBom(knob1, 1, 'Backbone & handles', 'handle lock knob');
-          addBom(knob2, 1, 'Backbone & handles', 'knob cap');
-          const kp = place({ partId: knob1?.id, role: 'knob', attach: { to: lp.key, x: kx, zRef: 'back', z: 0, zAlign: 'out' }, expect: [34, 34, 22] });
-          place({ partId: knob2?.id, role: 'keycap', attach: { to: kp.key, zRef: 'back', z: 0, zAlign: 'out' }, expect: [37.8, 13.2, 11.7] });
-        }
-      }
-    }
   }
   if (build.stationaryHandle) {
     const sh = parts.find({ category: 'modifications', group: 'Stationary Handle', size: W });
     addBom(sh, 1, 'Backbone & handles');
     addHw('M4 60mm bolt', 8);
-    place({ partId: sh?.id, role: 'stathandle', slot: { level: levels.length - 1 }, expect: [null, 47, 50] });
+    // A U lying flat: its two legs bolt through the topmost backbone board (from
+    // the module side), grip parallel to the back. Below the handle lock if any.
+    const board = boards.findLast((b) => b.bx <= 0);
+    const host = board?.key || lockKey;
+    place({
+      partId: sh?.id,
+      placeholder: !sh,
+      role: 'stathandle',
+      attach: host ? { to: host, x: board ? -board.bx : 0, yRef: 'top', yAlign: 'below', zRef: 'back', z: 0, zAlign: 'out' } : undefined,
+      expect: [null, 47, 50],
+    });
   }
 
   // ---- accessories & extras (pegboard hooks/containers/holders, spare grid divider pieces)
@@ -1217,9 +1284,8 @@ export function layout(build, res, dimsOf, opts = {}) {
   // ---- back side: layers of boards stacked per level (backbone, then
   // pegboard attachments / wall mounts outside it).
   let backZ = -D / 2;
-  let backboneBack = null;
-  const backLayer = (role) => {
-    const items = byRole(role).filter((p) => p.slot);
+  const backLayer = (...roles) => {
+    const items = res.placements.filter((p) => roles.includes(p.role) && !p.attach && p.slot);
     if (!items.length) return;
     let t = 0;
     const cursor = new Map();
@@ -1228,23 +1294,19 @@ export function layout(build, res, dimsOf, opts = {}) {
       if (!L) continue;
       const s = dims(p);
       t = Math.max(t, s[2]);
-      const k = `${p.slot.level}|${p.bx || 0}`;
+      // Stack per side (universal boards and locks sit left and right).
+      const k = `${p.slot.level}|${Math.sign(p.bx || 0)}`;
       const y0 = cursor.get(k) ?? L.y0 + 4;
       set(p, p.bx || 0, y0 + s[1] / 2, backZ - s[2] / 2 - gap * 0.3, s);
       cursor.set(k, y0 + s[1] + 1);
     }
     backZ -= t + gap * 0.3;
   };
-  backLayer('backbone');
-  if (byRole('backbone').length) backboneBack = backZ;
+  // The handle lock stands in for the top backbone board, so it stacks with them.
+  backLayer('backbone', 'handlelock');
   backLayer('pegboard');
   backLayer('wallmount');
-  for (const h of byRole('handlelock')) {
-    const L = levelY[levelY.length - 1];
-    if (!L) continue;
-    const s = dims(h);
-    set(h, h.bx || 0, L.y1 - s[1] / 2, (backboneBack ?? -D / 2) - s[2] / 2 - gap * 0.3, s);
-  }
+  // Stationary handle without a board to bolt to (shouldn't happen): behind the top level.
   for (const h of byRole('stathandle')) {
     const L = levelY[levelY.length - 1];
     if (!L) continue;
@@ -1271,13 +1333,17 @@ export function layout(build, res, dimsOf, opts = {}) {
   }
   for (const h of byRole('pullhandle')) {
     const s = dims(h);
+    // Drawn pulled out, 120 mm above the top.
     const hy = top + 120 + s[1] / 2 + gap;
-    const hz = -D / 2 - FIT.backboneT / 2 - gap * 0.3;
-    set(h, 0, hy, hz, s);
+    // Rods run through the boards' and lock's holes, ~16.5 mm behind the modules.
+    const rz = -D / 2 - 16.5 - gap * 0.3;
+    // The legs' rod holes are 3 mm off the handle's mid-depth, towards the back.
+    set(h, 0, hy, rz + 3, s);
     const floor = base ? out.get(base.key).y : 0;
+    const rodTop = hy - s[1] / 2 + 30; // ~30 mm up into the legs
     for (const r of byRole('rod')) {
-      const len = hy - floor;
-      set(r, r.side * (s[0] / 2 - 22), floor + len / 2, hz, [16, len, 16]);
+      const len = rodTop - floor;
+      set(r, r.side * (ROD_X[build.width] ?? s[0] / 2 - 17.5), floor + len / 2, rz, [16, len, 16]);
     }
     top += 120 + s[1];
   }
@@ -1319,7 +1385,7 @@ function nominal(pl, build) {
     case 'pegboard':
       return [W * 0.75, 47, FIT.pegboardT];
     case 'pullhandle':
-      return [W * 0.7, 35, 61.5];
+      return [W * 0.7, 61.5, 35];
     case 'stathandle':
       return [W * 0.75, 47, 50];
     case 'sfacade':

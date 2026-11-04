@@ -253,8 +253,10 @@ Each placed part is oriented by one of four methods (click a part to see which w
    knuckles and pivots measured in the STLs and their hosts.
 3. **Mount face** — parts screwed or resting against something are turned so their flattest face
    is the one against the host: feet (top), backbone boards, pegboard plates, wall mounts, handle
-   locks, stationary handle (front), labels (back), baseplates, dividers, latch, L² strips, top
-   handle, shelf items (bottom). `MOUNT_FACE` in `web/js/orient.js`.
+   locks (front), labels (back), baseplates, dividers, latch, L² strips, top handle, shelf items
+   (bottom). Two handles are checked on the side away from the host, because their mounting side
+   is only two small leg pads: the stationary handle's grip faces out (back) and the pull-out
+   handle's grip is on top. `MOUNT_FACE` in `web/js/orient.js`.
 4. **Static rules** — facades, keys and the rest, checked against the manual's pictures
    (`ORIENT_BY_ROLE` in `web/js/rules.js`).
 
@@ -318,8 +320,11 @@ one color, since they print together.
   gridfinity baseplate, dividers with counts (across, front-back, sealed rows).
 - **Base & back:** base connector (split bases), feet, tyres, hubs (disk, cover, bushing),
   backbone boards (full width or universal), module connectors, pegboard attachments, wall
-  mounts + wall plates, pull-out handle + rods, handle lock bar + knobs, stationary handle,
-  heavyweight roof handle + insert.
+  mounts + wall plates, pull-out handle + rods, handle lock + knobs, stationary handle,
+  heavyweight roof handle + insert. The handle lock takes the place of the top 1F backbone
+  board, and the M16 rods (x = ±40 / 85 / 123 / 167 mm for S / M / L / XL, measured) run through
+  it and the boards below. Knobs sit in pockets 17.5 mm inboard of each rod; S has one knob, in
+  its Lock Part 2. The stationary handle bolts to the topmost backbone board, below the lock.
 - **Accessories & extras:** any pegboard hook, container, container hook or holder, and any
   grid divider piece for custom layouts, with quantities; shown on a shelf beside the build.
 

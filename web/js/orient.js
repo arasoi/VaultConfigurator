@@ -341,7 +341,12 @@ export const MOUNT_FACE = {
   pegboard: 'front',
   wallmount: 'front',
   handlelock: 'front',
-  stathandle: 'front',
+  // The stationary handle is a U lying flat: its leg ends bolt to the backbone
+  // and the grip's flat back faces out. Leg pads cover little of the outline,
+  // so test the grip side instead (it must be the flat one, facing back).
+  stathandle: 'back',
+  // Pull-out handle: upside-down U, the grip's flat top up, legs down on the rods.
+  pullhandle: 'top',
   label: 'back',
   gridplate: 'bottom',
   sbaseplate: 'bottom',
