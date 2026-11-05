@@ -236,16 +236,17 @@ export class Viewer {
    * lod: preview level of detail to load ('build' for assembled builds, where
    * small parts need fewer triangles; 'full' for single parts).
    */
-  constructor(container, { onPick, onStatus, onLayout, colorOf, lod = 'full' } = {}) {
+  constructor(container, { onPick, onContext, onStatus, onLayout, colorOf, lod = 'full' } = {}) {
     this.container = container;
     this.lod = lod;
     this.colorOf = colorOf;
     this.onPick = onPick;
+    this.onContext = onContext; // right-click (or long press) on a part: (pl, {x, y})
     this.onStatus = onStatus;
     this.onLayout = onLayout;
     this.objects = new Map(); // placement key -> { mesh, pl, dims, loaded }
     this.geoCache = new Map(); // `${partId}|${geoKey}` -> Promise<{ geometry, dims, fileToLocal }>, oldest first
-    this.opts = { open: 0, explode: 0 };
+    this.opts = { open: 0, explode: 0, solo: null };
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -321,18 +322,33 @@ export class Viewer {
     const v = new THREE.Vector2();
     let down = null;
     const el = this.renderer.domElement;
-    el.addEventListener('pointerdown', (e) => (down = [e.clientX, e.clientY]));
-    el.addEventListener('pointerup', (e) => {
-      if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+    const keyAt = (e) => {
       const r = el.getBoundingClientRect();
       v.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       ray.setFromCamera(v, this.camera);
-      const hit = ray.intersectObjects(this.root.children, false)[0];
-      let key = hit?.object.userData.key;
-      if (key && this.objects.get(key)?.hw) key = this.objects.get(key).pl.host; // a bolt picks its part
+      const hit = ray.intersectObjects(this.root.children, false).find((h) => h.object.visible);
+      const key = hit?.object.userData.key;
+      return key && this.objects.get(key)?.hw ? this.objects.get(key).pl.host : key; // a bolt picks its part
+    };
+    el.addEventListener('pointerdown', (e) => (down = [e.clientX, e.clientY, performance.now()]));
+    // A click (not a drag): left selects, right (or a long press on touch) opens
+    // the part's menu. Right-drag still pans.
+    el.addEventListener('pointerup', (e) => {
+      if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+      const long = e.pointerType === 'touch' && performance.now() - down[2] > 500;
+      if (e.button !== 0 && e.button !== 2) return;
+      const key = keyAt(e);
+      const pl = key ? this.objects.get(key).pl : null;
+      if (e.button === 2 || long) {
+        if (!pl) return;
+        this.select(key);
+        this.onContext?.(pl, { x: e.clientX, y: e.clientY });
+        return;
+      }
       this.select(key || null);
-      this.onPick?.(key ? this.objects.get(key).pl : null);
+      this.onPick?.(pl);
     });
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
   /** Material for a placement: its resolved color, else the role default. */

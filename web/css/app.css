@@ -273,6 +273,45 @@ main {
   padding: 12px 14px;
   font-size: 13px;
 }
+.ctx-menu {
+  position: fixed;
+  z-index: 50;
+  min-width: 180px;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+}
+.ctx-title {
+  padding: 6px 10px 4px;
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ctx-menu [role='menuitem'] {
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.ctx-menu [role='menuitem']:hover,
+.ctx-menu [role='menuitem']:focus-visible {
+  background: var(--panel-2);
+  outline: none;
+}
 .pick-card h4 {
   margin: 0 0 4px;
   font-size: 14px;

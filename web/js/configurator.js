@@ -534,7 +534,7 @@ function renderColors(build, update) {
       ),
     ),
     h('div.color-rows', rows),
-    h('p.muted.hint', 'Click a part in the 3D view to color just that part, or every copy of its file.'),
+    h('p.muted.hint', 'Right-click a part in the 3D view and choose Colour & details… to color just that part, or every copy of its file.'),
     overrides
       ? h(
           'button.btn.sm',

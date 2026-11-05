@@ -121,12 +121,21 @@ the explode slider to see them; heads show on the back of a backbone and on the 
 
 - **Rotate:** drag with the left mouse button. **Pan:** drag with the right button. **Zoom:**
   scroll.
+- **Click a part** to select it (an orange outline; its row is highlighted in the parts list).
+- **Right-click a part** (long-press on a touch screen) for its menu:
+  - **Pull drawer out** / **Open sustainer**, on anything in a drawer or sustainer, such as a bin.
+    A drawer comes all the way out on its runners; a sustainer opens its lid, and the levels above
+    lift off so you can see inside, e.g. to check a bin layout. Only one opens at a time. Choose
+    **Push drawer in** / **Close sustainer**, or use the button of that name in the toolbar, to put
+    it back.
+  - **Colour & details…** opens the part's card: the file name and path, how many to print for
+    this build, its colour, a **Download STL** link, and how the part was oriented in the preview.
+    While the card is open, clicking another part shows that part instead.
+  - **Download STL** downloads that part's file.
 - **Open drawers & lids** slides the drawers out and opens the sustainer lids. **Explode** pulls the
   levels and parts apart so you can see how they fit together.
 - **Fit view** brings the whole build back into view. **Snapshot** saves the current view as a PNG.
 - The overall size of the build (width × depth × height in mm) is shown in the top-left corner.
-- **Click a part** to open its card: the file name and path, how many to print for this build, its
-  colour, a **Download STL** link, and how the part was oriented in the preview.
 - Hover a row in the parts list to highlight that part in 3D.
 - The **◐** button in the top-right switches between light and dark themes.
 
@@ -169,7 +178,7 @@ against the Documentation tab before printing.
 - **Colour groups:** every kind of part belongs to a group, such as modules & roofs, facades, drawer
   boxes, knobs & handles, latches, hinges, base, feet & wheel hubs, tyres, backbone, or internal
   parts. Click a group's swatch to change it, and **↺** to go back to the preset colour.
-- **Single parts:** click a part in the 3D view, then choose **Just this part** or **All copies**
+- **Single parts:** right-click a part in the 3D view, choose **Colour & details…**, then **Just this part** or **All copies**
   (every copy of that file) and pick a colour. **↺ Use group color** removes the override.
 
 The colours drive the filament summary and the folders in the ZIP download, and they are saved with
@@ -236,7 +245,7 @@ planner:
 - **Turn 90°** (or the `R` key) rotates the bin. **Fill empty cells** fills every gap with the
   selected bin. Click a placed bin to remove it.
 
-Placed bins are drawn in the 3D view (they move with the drawer when you open it), have their own
+Placed bins are drawn in the 3D view (right-click the drawer and choose **Pull drawer out** to see them), have their own
 colour group, and are added to the parts list under *Gridfinity bins* and to the ZIP. If a planned
 bin later doesn't fit (for example after changing the depth) or was deleted from the library, it's
 left out with a warning, and comes back when it fits again.

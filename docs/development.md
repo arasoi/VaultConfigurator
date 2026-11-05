@@ -142,7 +142,7 @@ Data/  ──scan──▶  catalog (tags parsed from file names)  ──▶  /a
    hardware list from the manual. `resolve()` turns a build into a print list + 3D placements;
    `layout()` positions them.
 4. **Viewer** (`web/js/viewer.js`): loads previews, matches each mesh's axes to its role's expected
-   width/height/depth, and stacks everything. Click a part to see its file and quantity. It only
+   width/height/depth, and stacks everything. Right-click a part and choose Colour & details… to see its file and quantity. It only
    redraws when something changed (camera, layout, colours, size), not every frame. A part whose
    preview can't be loaded, or that has no file at all, stays as a red box at its nominal size;
    the part card shows the reason, the status bar counts failures and offers a retry, and
@@ -264,11 +264,11 @@ flipped, L4 table roof is not). Stacking parts are therefore oriented from how t
    lids/bases). The interfaces are front/back asymmetric, so this fixes both up/down and front/back.
 
 Matches score 0.54–1.00 against ≤0.3 for wrong orientations. If a match isn't confident the static
-fallback in `ORIENT_BY_ROLE` is used. Click a part in the 3D view to see which was used.
+fallback in `ORIENT_BY_ROLE` is used. Open a part's card (right-click it in the 3D view, then Colour & details…) to see which was used.
 
 ### How every part is oriented
 
-Each placed part is oriented by one of four methods (click a part to see which was used):
+Each placed part is oriented by one of four methods (the part card shows which was used):
 
 1. **Connection interface** — modules, roofs, lids, bases (see above).
 2. **Measured file coordinates** — hinges, latches, geared racks, wheels, lock pins: positioned
@@ -427,6 +427,11 @@ What gets drawn, beyond modules/boxes/facades/roofs/lids:
   per side one guide in the module channel, one slide on the box and one stopper clicked into the
   module's side-wall slot (1F = 2 of each, 2F = 4, 4F = 8; in L²/XL² modules each box has guides
   on both sides, including the middle, while stoppers only go in the module's outer side walls),
+  placed from measurements of the S/M/L files: the slide's dovetail tip sits in the groove along
+  the box's outer wall (from 26 mm in from the box's back to its front), its head in the
+  guide's C-channel, which faces the box and rests against the module wall; the guide telescopes,
+  so it comes out half as far as its drawer (XL runners are a different, wedge-shaped design and
+  keep a simpler placement),
   gridfinity baseplate, grid dividers (across / front-back counts, T-joint segments, border
   pieces, pins), L² accessories.
 - **Sustainers:** hinges, latches (holder, link, lever, four pins), label, gridfinity baseplate,

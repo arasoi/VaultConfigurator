@@ -304,6 +304,9 @@ export function resolve(build, parts) {
   // level id / column / parent so they survive unrelated edits to the build.
   const cidByKey = new Map();
   const cidCount = new Map();
+  // owner: the cid of the drawer box or sustainer a part moves with, so one of
+  // them can be opened on its own (see layout's opts.solo).
+  const ownerByKey = new Map();
   const place = (pl) => {
     const key = `p${out.placements.length}`;
     let prefix = 'g';
@@ -317,7 +320,10 @@ export function resolve(build, parts) {
     cidCount.set(base, n + 1);
     const cid = `${base}/${n}`;
     cidByKey.set(key, cid);
-    const full = { key, cid, name: (pl.partId && parts.byId.get(pl.partId)?.name) || '', ...pl };
+    const owner =
+      pl.role === 'box' || pl.role === 'smodule' ? cid : (pl.owner ?? ownerByKey.get(pl.attach?.to ?? pl.host));
+    if (owner) ownerByKey.set(key, owner);
+    const full = { key, cid, name: (pl.partId && parts.byId.get(pl.partId)?.name) || '', ...pl, owner };
     out.placements.push(full);
     return full;
   };
@@ -985,16 +991,37 @@ function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, add
     const slide = runner('Slide');
     const gT = xl ? 14.6 : 9.4;
     const sT = xl ? 16 : 9;
+    // Runners (measured on the S/M/L files; XL runners are a different, wedge
+    // shaped design and keep the old placement). Three members telescope:
+    // - the slide's dovetail tip (1.7 mm) sits in the 2 mm groove along the
+    //   box's outer wall (the groove starts 26 mm from the box's back, so the
+    //   244 mm slide reaches the box front); its 18 mm head faces out;
+    // - the guide is a C-channel, open side towards the box, holding the
+    //   slide's head; it sits in the module's side pocket against the wall
+    //   (12.4 mm out from the box) and slides in it, its travel limited by
+    //   the stopper in the slot of its web;
+    // - so a pulled-out drawer takes its guides half as far.
+    // File axes: X = height, Y = length (slide: end block at the back; guide:
+    // closed end at the back), Z = thickness (tip / opening at +Z).
+    const runnerRows = (side) => (side > 0 ? [[0, 0, -1], [-1, 0, 0], [0, 1, 0]] : [[0, 0, 1], [1, 0, 0], [0, 1, 0]]);
+    const guidesAt = new Map(); // module level -> its guide placements
 
     // ---- Module side: one runner guide per level per side, and a stopper
     // clicked into the module's side-wall slot per level (outer walls only —
     // in L²/XL² modules the middle guides have no wall to clip into).
     for (const side of [-1, 1]) {
       const outer = !shared || (side < 0 ? bcx - bw / 2 <= slot.x - w / 2 + 1 : bcx + bw / 2 >= slot.x + w / 2 - 1);
-      const gx = dx + side * (boxW / 2 + gT / 2 + 0.5);
+      const gx = dx + side * (xl ? boxW / 2 + gT / 2 + 0.5 : boxW / 2 + 12.4 - gT / 2);
       for (let lvl = 0; lvl < F; lvl++) {
         addBom(guide, 1, 'Drawers', 'runner guide');
-        place({ partId: guide?.id, role: 'guide', attach: { to: mp.key, x: gx, yRef: 'bottom', y: 29 + 48 * lvl, yAlign: 'center', z: -1 }, expect: [gT, 27, D - 2.6] });
+        const gp = place({
+          partId: guide?.id,
+          role: 'guide',
+          attach: { to: mp.key, x: gx, yRef: 'bottom', y: 29 + 48 * lvl, yAlign: 'center', z: -1 },
+          xform: xl ? undefined : { origin: [0, 0, 0], rows: runnerRows(side) },
+          expect: [gT, 27, D - 2.6],
+        });
+        guidesAt.set(lvl, [...(guidesAt.get(lvl) || []), gp]);
         if (!outer) continue;
         addBom(stopper, 1, 'Drawers', 'clicks into the module side, holds the runner');
         place({ partId: stopper?.id, role: 'stopper', attach: { to: mp.key, x: side * (w / 2 - 3.1), yRef: 'bottom', y: 28.3 + 48 * lvl, yAlign: 'center', z: 28.5 }, expect: [8.2, 7.8, 17.9] });
@@ -1013,13 +1040,15 @@ function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, add
         if (panel) boxFiles.push(panel.id);
       }
       const bp = place({ partId: box.show?.id, placeholder: !box.show, role: 'box', lvl, h, files: boxFiles, slot: { ...slot, x: bcx, width: bw }, expect: [boxW, 48 * h - 10.5, D - 2.3] });
+      // The guides beside this box telescope out with it (half its travel).
+      for (let k = lvl; k < lvl + h; k++) for (const g of guidesAt.get(k) || []) g.ride = { box: bp.key, k: 0.5 };
 
       // Facade with its handle, screw caps and label.
       const facade = parts.find({ category: 'drawers', group: 'Facades', size: bs, height: h });
       if (!facade) missing(`${bs}${h}F drawer facade`, 'facade');
       addBom(facade, 1, 'Drawers');
       const fl = drawerFacadeLayout(bs, h);
-      const fp = place({ partId: facade?.id, role: 'facade', lvl, h, slot: { ...slot, x: bcx, width: bw }, expect: [bw, fl.H, FIT.facadeT] });
+      const fp = place({ partId: facade?.id, role: 'facade', owner: bp.cid, lvl, h, slot: { ...slot, x: bcx, width: bw }, expect: [bw, fl.H, FIT.facadeT] });
       addHw('M4 14mm bolt', fl.holes.length);
       if (facade) for (const c of fl.holes) hw(fp, bolt(4, 14), [c.x, c.y, FACADE_BOLT_SEAT], [0, 0, -1], 'local');
 
@@ -1154,7 +1183,15 @@ function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, add
       for (const side of [-1, 1]) {
         for (let k = 0; k < h; k++) {
           addBom(slide, 1, 'Drawers', 'runner slide, rides on the box');
-          place({ partId: slide?.id, role: 'slide', attach: { to: bp.key, x: side * (boxW / 2 - sT / 4), yRef: 'bottom', y: 18.7 + 48 * k, yAlign: 'center', z: -12 }, expect: [sT, 18.2, D - 28.1] });
+          place({
+            partId: slide?.id,
+            role: 'slide',
+            attach: xl
+              ? { to: bp.key, x: side * (boxW / 2 - sT / 4), yRef: 'bottom', y: 18.7 + 48 * k, yAlign: 'center', z: -12 }
+              : { to: bp.key, x: side * (boxW / 2 + sT / 2 - 1.8), yRef: 'bottom', y: 18.7 + 48 * k, yAlign: 'center', z: 12.9 },
+            xform: xl ? undefined : { origin: [0, 0, 0], rows: runnerRows(side) },
+            expect: [sT, 18.2, D - 28.1],
+          });
         }
       }
       // Springs (manual: Drawer Assembly 2/8): the file holds two identical
@@ -1303,14 +1340,14 @@ function resolveSustainer({ size, F, d, D, col, slot, li, build, parts, addBom, 
     const conn = parts.find({ category: 'sustainers', group: 'Roofs', size, depth: d, variant: 'roof-connector' });
     if (conn) lidFiles.push(conn.id);
   }
-  const lp = place({ partId: lid.show?.id, role: 'lid', files: lidFiles, slot, expect: [w, 27.8, D + 10], iface: ifaceFor(parts, size, d) });
+  const lp = place({ partId: lid.show?.id, role: 'lid', owner: mp.cid, files: lidFiles, slot, expect: [w, 27.8, D + 10], iface: ifaceFor(parts, size, d) });
 
   const facade =
     parts.find({ category: 'sustainers', group: 'Facades', size, height: F, path: /Families/ }) ||
     parts.find({ category: 'sustainers', group: 'Facades', size, height: F });
   if (!facade) missing(`${size}${F}F sustainer facade`, 'sfacade');
   addBom(facade, 1, 'Sustainers');
-  const fp = place({ partId: facade?.id, role: 'sfacade', slot, expect: [w, null, FIT.facadeT] });
+  const fp = place({ partId: facade?.id, role: 'sfacade', owner: mp.cid, slot, expect: [w, null, FIT.facadeT] });
 
   const uni = (re) => parts.find({ category: 'sustainers', group: 'Universal', name: re });
   const sm = size === 'S' || size === 'M';
@@ -1548,11 +1585,13 @@ export function accessoryLabel(part) {
 /**
  * Computes world transforms for placements.
  * dimsOf(placement) -> [w, h, d] of the oriented mesh, or null (use expect / nominal).
- * opts: { open: 0..1 drawers pulled out, explode: 0..1 }
+ * opts: { open: 0..1 drawers pulled out, explode: 0..1,
+ *         solo: cid of one drawer box or sustainer module to open fully }
  * Returns Map key -> { x, y, z, w, h, d } (center + size), plus total bounds.
  */
 export function layout(build, res, dimsOf, opts = {}) {
   const open = opts.open || 0;
+  const solo = opts.solo || null;
   const gap = (opts.explode || 0) * 60;
   const W = WIDTH[build.width];
   const D = depthMM(build.depth);
@@ -1594,8 +1633,10 @@ export function layout(build, res, dimsOf, opts = {}) {
   const levelY = [];
   const colTops = new Map(); // "level:col" -> top y of that column
   const lidHinge = new Map(); // "level:col" -> { py, pz, a }: a sustainer lid's pivot and opening angle
+  const pulls = new Map(); // drawer box key -> how far it is pulled out
   (build.levels || []).forEach((lv, li) => {
     let levelH = 0;
+    let lift = 0; // room for a sustainer lid opened below the levels above
     const items = res.placements.filter((p) => p.slot && p.slot.level === li);
     const cols = [...new Set(items.filter((p) => p.slot.col !== undefined).map((p) => p.slot.col))];
     for (const ci of cols) {
@@ -1606,13 +1647,20 @@ export function layout(build, res, dimsOf, opts = {}) {
       set(mod, mod.slot.x, y + ms[1] / 2, 0, ms);
       let colH = ms[1] - FIT.lip;
       if (mod.role === 'module') {
+        // The runners allow full extension: a solo drawer comes out by its
+        // whole length, the rest by about half.
+        const soloBox = solo && colItems.find((p) => p.role === 'box' && p.cid === solo);
+        const full = soloBox ? dims(soloBox)[2] : 0;
         for (const p of colItems) {
           const s = dims(p);
-          const pull = open * (D * 0.55);
+          const pull = soloBox && p.owner === solo ? Math.max(full, open * D * 0.55) : open * (D * 0.55);
           // Boxes stack inside the module: box k starts 48 mm × its level up.
           const lvl = p.lvl || 0;
           const bh = p.h || lv.height;
-          if (p.role === 'box') set(p, p.slot.x, y + FIT.boxFloor + 48 * lvl + s[1] / 2, pull, s);
+          if (p.role === 'box') {
+            set(p, p.slot.x, y + FIT.boxFloor + 48 * lvl + s[1] / 2, pull, s);
+            pulls.set(p.key, pull);
+          }
           if (p.role === 'facade') set(p, p.slot.x, y + FIT.frameBottom + 48 * lvl + (48 * bh - 1) / 2, D / 2 + s[2] / 2 + pull, s);
         }
       } else {
@@ -1624,9 +1672,12 @@ export function layout(build, res, dimsOf, opts = {}) {
           lidTop = ly + ls[1];
           colH = lidTop - y - FIT.lip;
           // Lids swing open around the hinge line at the top of the back wall —
-          // only on the top level, where nothing is stacked on the lid.
+          // only on the top level, where nothing is stacked on the lid, unless
+          // this sustainer is opened on its own: then the levels above lift off.
           const isTop = li === build.levels.length - 1;
-          const a = isTop ? -open * THREE_DEG * 105 : 0;
+          const isSolo = mod.cid === solo;
+          const a = isSolo ? -THREE_DEG * 105 : isTop ? -open * THREE_DEG * 105 : 0;
+          if (isSolo && !isTop) lift = Math.max(lift, ls[2] + 40);
           // The lid is 10 mm deeper than the module (the facade's thickness): its
           // back edge is flush with the module back and its front covers the facade.
           // Pivot on the hinge axis (rim height, behind the back wall).
@@ -1648,7 +1699,7 @@ export function layout(build, res, dimsOf, opts = {}) {
       levelH = Math.max(levelH, colH);
     }
     levelY.push({ y0: y, y1: y + levelH });
-    y += levelH + gap;
+    y += levelH + gap + lift;
   });
   let top = y - gap;
 
@@ -1762,6 +1813,8 @@ export function layout(build, res, dimsOf, opts = {}) {
     oz += a.z || 0;
     if (a.zAlign === 'out') oz += (dir * s[2]) / 2;
     if (a.zAlign === 'in') oz -= (dir * s[2]) / 2;
+    // Telescoping runner guides come out part of the way with their drawer.
+    if (pl.ride) oz += (pulls.get(pl.ride.box) || 0) * pl.ride.k;
     const ox = a.x || 0;
     const c = Math.cos(p.rx || 0);
     const sn = Math.sin(p.rx || 0);

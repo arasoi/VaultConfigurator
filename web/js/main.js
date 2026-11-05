@@ -41,6 +41,7 @@ for (const btn of document.querySelectorAll('.tabs button')) {
 }
 function showTab(name) {
   closePlanner();
+  closePartMenu();
   for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === name));
   for (const p of document.querySelectorAll('.tab-page')) p.classList.toggle('active', p.id === `tab-${name}`);
   tabInit[name]?.();
@@ -121,7 +122,15 @@ const statusEl = $('#status');
 const pickEl = $('#pick');
 const viewer = new Viewer($('#viewer'), {
   lod: 'build',
-  onPick: (pl) => showPick(pl),
+  // Left click selects; the card only follows the selection once it's open
+  // (it's opened from the right-click menu).
+  onPick: (pl) => {
+    closePartMenu();
+    sel = pl?.cid || null;
+    if (!pl || picked) showPick(pl);
+    else markBomRow($('#bom'), pl.partId || null);
+  },
+  onContext: (pl, at) => openPartMenu(pl, at),
   colorOf: (pl) => placementColor(build, pl),
   onStatus: ({ total, done, failed }) => {
     const loading = done < total;
@@ -160,6 +169,7 @@ function update(mutator) {
 
 function render() {
   res = resolve(build, parts);
+  if (solo && !res.placements.some((p) => p.cid === solo)) setSolo(null);
   renderConfig($('#config'), build, parts, update);
   viewer.setBuild(build, res);
   refreshBom();
@@ -170,6 +180,9 @@ function render() {
       viewer.select(pl.key);
       showPick(pl);
     } else showPick(null);
+  } else if (sel) {
+    const pl = res.placements.find((x) => x.cid === sel);
+    viewer.select(pl ? pl.key : null);
   }
 }
 
@@ -177,7 +190,8 @@ function refreshBom() {
   renderBom($('#bom'), build, res, viewer.lastLayout, {
     onHover: (id) => {
       if (id) return viewer.selectPart(id);
-      const pl = picked && res.placements.find((x) => x.cid === picked);
+      const cid = picked || sel;
+      const pl = cid && res.placements.find((x) => x.cid === cid);
       viewer.select(pl ? pl.key : null);
     },
     onShare: async () => {
@@ -193,6 +207,75 @@ function refreshBom() {
 }
 
 let picked = null; // cid of the part shown in the card
+let sel = null; // cid of the part selected in 3D (with or without its card)
+let solo = null; // cid of the one drawer box / sustainer opened fully
+
+/** The drawer box or sustainer module a placement moves with, if any. */
+function ownerOf(pl) {
+  return (pl?.owner && res.placements.find((p) => p.cid === pl.owner)) || null;
+}
+const ownerNoun = (o) => (o.role === 'box' ? 'drawer' : 'sustainer');
+
+/** Opens one drawer (pulled all the way out) or sustainer (lid up, levels above lifted). */
+function setSolo(cid) {
+  solo = cid;
+  viewer.setOptions({ solo });
+  const o = solo && res.placements.find((p) => p.cid === solo);
+  const btn = $('#btn-solo');
+  btn.hidden = !o;
+  if (o) btn.textContent = `Close ${ownerNoun(o)}`;
+}
+
+/** Whether a placement has a card (a file, or a reason it has none). */
+const hasCard = (pl) => !pl.fixedColor && !!(pl.partId || pl.files?.length || viewer.failure(pl.key));
+
+// ---- right-click menu on a part in the 3D view
+let partMenu = null;
+function closePartMenu() {
+  partMenu?.remove();
+  partMenu = null;
+}
+function openPartMenu(pl, { x, y }) {
+  closePartMenu();
+  sel = pl.cid;
+  if (picked) showPick(pl);
+  else markBomRow($('#bom'), pl.partId || null);
+  const p = pl.partId ? catalog.byId.get(pl.partId) : null;
+  const owner = ownerOf(pl);
+  const item = (label, fn, extra = {}) =>
+    h('button', { type: 'button', role: 'menuitem', ...extra, onclick: () => (closePartMenu(), fn?.()) }, label);
+  const items = [
+    owner
+      ? item(
+          solo === owner.cid ? (owner.role === 'box' ? 'Push drawer in' : 'Close sustainer') : owner.role === 'box' ? 'Pull drawer out' : 'Open sustainer',
+          () => setSolo(solo === owner.cid ? null : owner.cid),
+        )
+      : null,
+    hasCard(pl) ? item('Colour & details…', () => showPick(pl)) : null,
+    p && !viewer.failure(pl.key) ? h('a', { role: 'menuitem', href: `/api/file/${p.id}?download`, onclick: closePartMenu }, 'Download STL') : null,
+  ].filter(Boolean);
+  if (!items.length) return;
+  const title = p ? p.name : ROLE_LABEL[pl.role] || capitalize(ROLE_NAME[pl.role] || pl.role);
+  partMenu = h('div.ctx-menu', { role: 'menu', 'aria-label': title }, h('div.ctx-title', title), ...items);
+  document.body.append(partMenu);
+  // Keep it on screen.
+  const r = partMenu.getBoundingClientRect();
+  partMenu.style.left = `${Math.max(8, Math.min(x, innerWidth - r.width - 8))}px`;
+  partMenu.style.top = `${Math.max(8, Math.min(y, innerHeight - r.height - 8))}px`;
+  partMenu.onkeydown = (e) => {
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    const all = [...partMenu.querySelectorAll('[role=menuitem]')];
+    const i = all.indexOf(document.activeElement);
+    all[(i + (e.key === 'ArrowDown' ? 1 : all.length - 1)) % all.length]?.focus();
+  };
+  partMenu.querySelector('[role=menuitem]')?.focus();
+}
+document.addEventListener('pointerdown', (e) => partMenu && !partMenu.contains(e.target) && closePartMenu(), true);
+document.addEventListener('keydown', (e) => e.key === 'Escape' && closePartMenu());
+addEventListener('wheel', closePartMenu, { passive: true });
+addEventListener('resize', closePartMenu);
+addEventListener('blur', closePartMenu);
 let pickScope = 'part'; // 'part' = this copy only, 'file' = every copy of the file
 
 const ROLE_LABEL = { backbone: 'Backbone board' };
@@ -276,6 +359,7 @@ function showPick(pl) {
         'button.btn.sm.ghost',
         {
           onclick: () => {
+            sel = null;
             viewer.select(null);
             showPick(null);
           },
@@ -303,6 +387,7 @@ function toast(msg, ms = 1800) {
 $('#opt-open').onchange = (e) => viewer.setOptions({ open: e.target.checked ? 1 : 0 });
 $('#opt-explode').oninput = (e) => viewer.setOptions({ explode: Number(e.target.value) });
 $('#btn-fit').onclick = () => viewer.fit();
+$('#btn-solo').onclick = () => setSolo(null);
 $('#btn-snap').onclick = () => {
   const a = h('a', { href: viewer.snapshot(), download: `${build.name || 'vault'}.png` });
   a.click();
