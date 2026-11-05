@@ -15,7 +15,7 @@ you need to print it.
 > host a public instance that serves files you aren't licensed to share. See
 > [Data files (not included)](#data-files-not-included).
 >
-> This is an unofficial fan project, not affiliated with or endorsed by the VAULT designer.
+> This is an unofficial fan project, not affiliated with or endorsed by USSA.
 
 **How to use it:** see the [user guide](docs/user-guide.md).
 
