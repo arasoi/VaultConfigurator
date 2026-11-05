@@ -38,7 +38,9 @@ const meshCache = new Map(); // id -> Promise<{geometry, size, srcTris}>
  */
 export function loadPreview(id) {
   if (!meshCache.has(id)) {
-    const p = fetch(`/api/preview/${id}`)
+    // Previews revalidate by ETag. The query string only skips copies browsers
+    // cached under the old day-long max-age; it never needs bumping again.
+    const p = fetch(`/api/preview/${id}?r=2`)
       .then((r) => {
         if (!r.ok) throw new Error(`preview ${id}: HTTP ${r.status}`);
         return r.arrayBuffer();

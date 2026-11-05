@@ -163,7 +163,7 @@ ASP.NET Identity, or a team already living in C#.
 ```
 Data/  ──scan──▶  catalog (tags parsed from file names)  ──▶  /api/catalog
   │
-  └─ *.stl ──read──▶ simplify (vertex clustering) ──▶ orient (min bounding box) ──▶ cache/*.vms.gz ──▶ /api/preview/{id}
+  └─ *.stl ──read──▶ simplify (quadric edge collapse) ──▶ orient (min bounding box) ──▶ cache/*.vms.gz ──▶ /api/preview/{id}
 ```
 
 1. **Catalog** (`internal/catalog`): every file under `-data` is classified from its path, e.g.
@@ -173,8 +173,15 @@ Data/  ──scan──▶  catalog (tags parsed from file names)  ──▶  /a
 2. **Previews** (`internal/mesh`): the original STLs are far too big for a browser, and they come
    from one big CAD scene, so they're scattered and often rotated (e.g. roofs at 45°). On first
    request each file is simplified to ≤150k triangles, rotated so its tightest bounding box is
-   axis-aligned, centered, and cached as a compact binary (`VMS1`, see `format.go`). Large files
-   take ~1–2 s the first time, then load instantly.
+   axis-aligned, centered, and cached as a compact binary (`VMS1`, see `format.go`).
+   Simplification is quadric edge collapse (`decimate.go`), which collapses the edges that change
+   the shape least, so flat areas get a few large triangles and edges, fillets and small features
+   keep theirs. Inputs above 4× the budget are first clustered on a grid, each cell's vertex placed
+   on the original surfaces, not averaged. A 7 M-triangle module takes ~7 s and a typical part
+   1–2 s the first time; after that they load instantly (`-warm` pre-generates them all).
+   Previews are served with an ETag from the cache key, which includes `algoVersion` in
+   `previews.go`, so bumping it reaches browsers immediately. The viewer shades with smooth
+   normals that keep edges sharper than 35°.
 3. **Rules** (`web/js/rules.js`): the VAULT system knowledge lives here — sizes (S 164.8, M 254,
    L 329.6 = S+S, XL 418.8 = S+M mm), depths (42 mm gridfinity units), heights (1F/2F/4F on a 48 mm
    pitch), which files make up each drawer/sustainer, roofs, bases, backbone, handles, and the

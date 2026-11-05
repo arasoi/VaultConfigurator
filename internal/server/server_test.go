@@ -106,3 +106,33 @@ func TestZipRejectsUnknownAndStaticRevalidates(t *testing.T) {
 		t.Errorf("static Cache-Control = %q", got)
 	}
 }
+
+// Previews revalidate by ETag, so regenerated previews (new algorithm version)
+// reach browsers that cached an older one.
+func TestPreviewETag(t *testing.T) {
+	s, cat := testServer(t)
+	path := "/api/preview/" + idOf(cat, "Springs")
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	etag := rec.Header().Get("ETag")
+	if etag == "" || rec.Header().Get("Cache-Control") != "no-cache" {
+		t.Fatalf("ETag %q, Cache-Control %q", etag, rec.Header().Get("Cache-Control"))
+	}
+	req := httptest.NewRequest("GET", path, nil)
+	req.Header.Set("If-None-Match", etag)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotModified {
+		t.Errorf("revalidation: status %d, want 304", rec.Code)
+	}
+	req = httptest.NewRequest("GET", path, nil)
+	req.Header.Set("If-None-Match", `"stale"`)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("stale ETag: status %d, want 200", rec.Code)
+	}
+}

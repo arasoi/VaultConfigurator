@@ -19,11 +19,82 @@ function extraRotation(rot) {
   return m.makeRotationFromEuler(e);
 }
 
+/**
+ * Smooth shading that keeps sharp edges: each vertex gets one normal per group
+ * of its faces that bend less than `creaseDeg` against each other (area-weighted
+ * average), so fillets and curves render smooth while box edges stay crisp.
+ * Vertices are split where groups differ. Run last: it breaks the vertex
+ * sharing that body splitting and orientation rely on.
+ */
+function creasedNormals(g, creaseDeg = 35) {
+  const pos = g.attributes.position.array;
+  const idx = g.index.array;
+  const nv = pos.length / 3;
+  const nt = idx.length / 3;
+  const fn = new Float32Array(nt * 3); // area-weighted face normals
+  for (let t = 0; t < nt; t++) {
+    const a = idx[3 * t] * 3, b = idx[3 * t + 1] * 3, c = idx[3 * t + 2] * 3;
+    const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2];
+    const vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
+    fn[3 * t] = uy * vz - uz * vy;
+    fn[3 * t + 1] = uz * vx - ux * vz;
+    fn[3 * t + 2] = ux * vy - uy * vx;
+  }
+  const unit = (t) => {
+    const x = fn[3 * t], y = fn[3 * t + 1], z = fn[3 * t + 2];
+    const l = Math.hypot(x, y, z) || 1;
+    return [x / l, y / l, z / l];
+  };
+  // vertex -> incident faces (CSR)
+  const start = new Uint32Array(nv + 1);
+  for (let i = 0; i < idx.length; i++) start[idx[i] + 1]++;
+  for (let v = 0; v < nv; v++) start[v + 1] += start[v];
+  const fill = start.slice(0, nv);
+  const faces = new Uint32Array(idx.length);
+  for (let i = 0; i < idx.length; i++) faces[fill[idx[i]]++] = (i / 3) | 0;
+
+  const cos = Math.cos(THREE.MathUtils.degToRad(creaseDeg));
+  const outPos = [];
+  const outNrm = [];
+  const outIdx = new Uint32Array(idx.length);
+  for (let v = 0; v < nv; v++) {
+    const f0 = start[v], f1 = start[v + 1];
+    const taken = new Uint8Array(f1 - f0);
+    for (let i = f0; i < f1; i++) {
+      if (taken[i - f0]) continue;
+      const seed = unit(faces[i]);
+      let sx = 0, sy = 0, sz = 0;
+      const id = outPos.length / 3;
+      for (let j = i; j < f1; j++) {
+        if (taken[j - f0]) continue;
+        const t = faces[j];
+        const n = unit(t);
+        if (n[0] * seed[0] + n[1] * seed[1] + n[2] * seed[2] < cos) continue;
+        taken[j - f0] = 1;
+        sx += fn[3 * t];
+        sy += fn[3 * t + 1];
+        sz += fn[3 * t + 2];
+        for (let k = 0; k < 3; k++) if (idx[3 * t + k] === v) outIdx[3 * t + k] = id;
+      }
+      const l = Math.hypot(sx, sy, sz) || 1;
+      outPos.push(pos[3 * v], pos[3 * v + 1], pos[3 * v + 2]);
+      outNrm.push(sx / l, sy / l, sz / l);
+    }
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(new Float32Array(outPos), 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(outNrm), 3));
+  out.setIndex(new THREE.BufferAttribute(outIdx, 1));
+  out.userData = { ...g.userData };
+  out.computeBoundingBox();
+  return out;
+}
+
 const materials = new Map();
 const colorMaterials = new Map();
 function colorMaterial(hex) {
   if (!colorMaterials.has(hex)) {
-    colorMaterials.set(hex, new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), roughness: 0.75, metalness: 0.05, flatShading: true }));
+    colorMaterials.set(hex, new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), roughness: 0.75, metalness: 0.05 }));
   }
   return colorMaterials.get(hex);
 }
@@ -36,7 +107,6 @@ function materialFor(role) {
         color: COLORS[role] ?? COLORS.part,
         roughness: 0.75,
         metalness: 0.05,
-        flatShading: true,
       }),
     );
   }
@@ -350,7 +420,7 @@ export class Viewer {
               applyXform(g, o.pl.xform);
               g.userData.orientedBy = 'measured (file coordinates)';
               const s = g.boundingBox.getSize(new THREE.Vector3());
-              return { geometry: g, dims: [s.x, s.y, s.z] };
+              return { geometry: creasedNormals(g), dims: [s.x, s.y, s.z] };
             }
             g.applyMatrix4(fitAxes(pv.size, o.pl.expect));
             g.computeBoundingBox();
@@ -375,7 +445,7 @@ export class Viewer {
             const c = bb.getCenter(new THREE.Vector3());
             g.translate(-c.x, -c.y, -c.z);
             const s = bb.getSize(new THREE.Vector3());
-            return { geometry: g, dims: [s.x, s.y, s.z] };
+            return { geometry: creasedNormals(g), dims: [s.x, s.y, s.z] };
           }),
         );
       }
@@ -454,7 +524,7 @@ export class Viewer {
     const bb = g.boundingBox;
     const c = bb.getCenter(new THREE.Vector3());
     g.translate(-c.x, -bb.min.y, -c.z);
-    const mesh = new THREE.Mesh(g, materialFor('part'));
+    const mesh = new THREE.Mesh(creasedNormals(g), materialFor('part'));
     mesh.castShadow = true;
     mesh.userData.key = 'single';
     this.root.add(mesh);

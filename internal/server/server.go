@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -71,6 +72,16 @@ func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not a mesh", http.StatusBadRequest)
 		return
 	}
+	// The cache file name hashes the source file, the algorithm version and the
+	// triangle budget, so it doubles as the ETag: browsers revalidate (a cheap
+	// 304) and pick up regenerated previews immediately.
+	etag := `"` + strings.TrimSuffix(filepath.Base(s.Previews.cachePath(p)), ".vms.gz") + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "no-cache")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	file, err := s.Previews.Get(p)
 	if err != nil {
 		log.Printf("preview %s: %v", p.Path, err)
@@ -85,7 +96,6 @@ func (s *Server) preview(w http.ResponseWriter, r *http.Request) {
 	defer f.Close()
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Encoding", "gzip")
-	w.Header().Set("Cache-Control", "public, max-age=86400")
 	_, _ = io.Copy(w, f)
 }
 
