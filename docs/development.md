@@ -228,6 +228,25 @@ the last one sits under the **Label** (bottom-left). The **Key** (knob) and **Ke
 bottom row (centre on 1F), or a flush **Hidden Key** if chosen. S: 1 cap (1F) / 3 caps (2F, 4F).
 M, L, XL: 3 caps (1F) / 5 caps (2F, 4F).
 
+Heights: a drawer module's front frame starts 4.8 mm above the module's bottom and is 48·F − 1
+tall, exactly the facade's height, so the facade sits on it (`FIT.frameBottom`). The box sits
+10 mm above the module's bottom (`FIT.boxFloor`): that puts its facade holes on the facade's
+(23.5 mm above the facade's bottom) and its slides (18.7 mm up) level with the module's guides
+(29 mm up). Stacked drawers inside a tall module each add 48 mm.
+
+Springs (manual: Drawer Assembly 2/8): the Springs file holds two identical springs. Each lies
+flat in the back of the facade with its flat side facing the box. The notch in its pad hooks
+around the boss of a key-row screw hole (x = ±51.5 mm), and the zig-zag runs inward so the pawl
+at its tip rests on the key's teeth. The left spring is the right one turned 180° in the
+facade's plane.
+
+Release latch (manual: Drawer Assembly 8/8): it lies flat in the framed pocket in the drawer
+module's underside near the back, flush with the module's bottom; the pocket is the same distance
+from the back edge on every depth. Its arms run inside the pocket's side walls, and the rounded
+tabs at their ends sit in the matching U-shaped seats at the front of the pocket (rounded end
+about 64 mm from the back). That puts the latch's centre 27.5 mm from the back, with the pull ring
+sticking out past the back edge so it can be pulled to release the drawer.
+
 ### Sustainer hinges and latches
 
 Two hinges at the back, and latches on the facade — one centred on S/M, two on L (±82.4 mm) and
@@ -285,8 +304,8 @@ drawn copies and print quantities, and nothing drawn that isn't in the list.
 What gets drawn, beyond modules/boxes/facades/roofs/lids:
 
 - **Drawers:** knob + key cap (or hidden key; the removable key is one per build and sits on the
-  shelf beside the build), screw-hole caps, label, springs (one file = both springs), latch
-  (module floor), geared rails (always fitted; one file = the upper 6.2 mm + lower 4.8 mm rack,
+  shelf beside the build), screw-hole caps, label, springs (one file = both springs, drawn separately each side of the key), latch
+  (in the pocket at the back of the module's underside), geared rails (always fitted; one file = the upper 6.2 mm + lower 4.8 mm rack,
   drawn separately in the two tunnels of the box's front wall), runners at **every height level**:
   per side one guide in the module channel, one slide on the box and one stopper clicked into the
   module's side-wall slot (1F = 2 of each, 2F = 4, 4F = 8; in L²/XL² modules each box has guides

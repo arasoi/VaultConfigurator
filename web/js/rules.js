@@ -28,7 +28,14 @@ export const FIT = {
   lidSeat: 7.6,
   baseLip: 9,
   footTuck: 30, // how far the feet tuck up into the base
-  boxFloor: 6,
+  // Drawer module front frame: starts 4.8 mm above the module's bottom and is
+  // 48·F − 1 tall, exactly a facade's height, so the facade covers it.
+  frameBottom: 4.8,
+  // Drawer box bottom above the module's bottom (per 48 mm level). Puts the
+  // box's facade holes on the facade's (23.5 mm above its bottom) and the
+  // box's slides (18.7 mm up) level with the module's guides (29 mm up).
+  boxFloor: 10,
+  moduleFloor: 6, // top of the drawer module's floor, for parts lying on it
   facadeT: 10,
   backboneT: 33,
   wallMountT: 17,
@@ -957,10 +964,45 @@ function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, add
           place({ partId: slide?.id, role: 'slide', attach: { to: bp.key, x: side * (boxW / 2 - sT / 4), yRef: 'bottom', y: 18.7 + 48 * k, yAlign: 'center', z: -12 }, expect: [sT, 18.2, D - 28.1] });
         }
       }
-      // Springs sit in the back of the facade around the key's gear (the file holds both).
-      place({ partId: springs?.id, role: 'spring', attach: { to: fp.key, x: fl.key.x, y: fl.key.y, zRef: 'back', z: 0, zAlign: 'out' }, expect: [75.6, 47.5, 5.2] });
-      // The latch clips in under the drawer front: the module floor, or the ledge for upper boxes.
-      place({ partId: latch?.id, role: 'dlatch', attach: { to: mp.key, x: dx, yRef: 'bottom', y: 0.5 + 48 * lvl, yAlign: 'above', zRef: 'front', z: -6, zAlign: 'in' }, expect: [96.6, 4.5, 74.6] });
+      // Springs (manual: Drawer Assembly 2/8): the file holds two identical
+      // springs side by side (y > 0 and y < 0). Each lies flat in the back of the
+      // facade, flat side (file −z) facing the box: the pad's notch, at file
+      // (13.5, ±19.3), hooks around the boss of the key-row screw hole at
+      // x = ±51.5, and the zig-zag runs inward so the pawl at its tip rests on
+      // the key's teeth. The left spring is the right one turned 180° in the
+      // facade's plane, so the pair is point-symmetric about the key.
+      let firstSpring = null;
+      for (const side of [1, -1]) {
+        const sp = place({
+          partId: springs?.id,
+          role: 'spring',
+          weight: 0.5,
+          colorFrom: firstSpring?.cid,
+          attach: { to: fp.key, x: fl.key.x + side * DRAWER_HOLE_INNER, y: fl.key.y, zRef: 'back', z: 2.6 },
+          xform: {
+            body: { axis: 1, sign: side },
+            origin: [13.5, side * 19.3, 0],
+            rows: side > 0 ? [[1, 0, 0], [0, 1, 0], [0, 0, 1]] : [[-1, 0, 0], [0, -1, 0], [0, 0, 1]],
+          },
+        });
+        firstSpring ??= sp;
+      }
+      // Release latch (manual: Drawer Assembly 8/8, "flip a module, then push the
+      // latch into its place"): it lies flat in the framed pocket in the module's
+      // underside near the back (the same distance from the back edge on every
+      // depth). The latch (96.6 × 74.6 × 4.5, file z = thickness) has its pull
+      // ring (file −y) towards the back, sticking out past the back edge so it
+      // can be pulled; its arms run inside the pocket's side walls and the
+      // rounded tabs at their ends sit in the matching U-shaped seats at the
+      // front of the pocket (rounded end ~64 mm from the back; the tab ends
+      // 36.5 mm in front of the latch's centre). That puts its centre 27.5 mm
+      // from the back. Upper boxes in tall modules: one 48 mm level up per box.
+      place({
+        partId: latch?.id,
+        role: 'dlatch',
+        attach: { to: mp.key, x: dx, yRef: 'bottom', y: 2.25 + 48 * lvl, zRef: 'back', z: 27.5 },
+        xform: { origin: [0, 0, 0], rows: [[1, 0, 0], [0, 0, -1], [0, 1, 0]] },
+      });
 
       // Geared rails: one file = the pair (a 6.2 mm upper and a 4.8 mm lower
       // rack). They slide into two tunnels in the box's front wall, one from
@@ -998,7 +1040,7 @@ function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, add
     // Divider pieces that hold the two S boxes of an L² module apart.
     parts.findAll({ category: 'drawers', group: 'Universal', depth: d, name: /Accessory/ }).forEach((p) => {
       addBom(p, 1, 'Drawers');
-      place({ partId: p.id, role: 'l2acc', attach: { to: mp.key, yRef: 'bottom', y: FIT.boxFloor, yAlign: 'above' }, expect: [null, null, D - 10] });
+      place({ partId: p.id, role: 'l2acc', attach: { to: mp.key, yRef: 'bottom', y: FIT.moduleFloor, yAlign: 'above' }, expect: [null, null, D - 10] });
     });
   }
 }
@@ -1310,7 +1352,7 @@ export function layout(build, res, dimsOf, opts = {}) {
           const lvl = p.lvl || 0;
           const bh = p.h || lv.height;
           if (p.role === 'box') set(p, p.slot.x, y + FIT.boxFloor + 48 * lvl + s[1] / 2, pull, s);
-          if (p.role === 'facade') set(p, p.slot.x, y + 48 * lvl + 24 * bh, D / 2 + s[2] / 2 + pull, s);
+          if (p.role === 'facade') set(p, p.slot.x, y + FIT.frameBottom + 48 * lvl + (48 * bh - 1) / 2, D / 2 + s[2] / 2 + pull, s);
         }
       } else {
         const lid = colItems.find((p) => p.role === 'lid');
