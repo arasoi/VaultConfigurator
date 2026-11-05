@@ -18,12 +18,13 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         go: [go.mod, stable]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: ${{ matrix.go == 'go.mod' && 'go.mod' || '' }}
           go-version: ${{ matrix.go == 'stable' && 'stable' || '' }}
+          cache: false  # no dependencies, so no go.sum to cache
 
       - name: Vet
         run: go vet ./...
@@ -35,11 +36,12 @@ jobs:
     name: Release build (sample platforms)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
+          cache: false  # no dependencies, so no go.sum to cache
 
       - name: Check formatting
         run: |
