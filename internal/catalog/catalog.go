@@ -68,21 +68,28 @@ func Scan(root string) (*Catalog, error) {
 	if err != nil {
 		return nil, err
 	}
+	if real, err := filepath.EvalSymlinks(root); err == nil {
+		root = real
+	}
 	c := &Catalog{Root: root, Scanned: time.Now(), byID: map[string]*Part{}}
-	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	// Walk through os.DirFS so the data folder itself may be a symlink or a
+	// Windows junction (e.g. to a NAS or another drive): DirFS opens the root by
+	// following it, where filepath.WalkDir would treat a linked root as a file.
+	// Links inside the folder are still not followed.
+	err = fs.WalkDir(os.DirFS(root), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if strings.HasPrefix(d.Name(), ".") {
-			if d.IsDir() && p != root {
-				return filepath.SkipDir
+			if d.IsDir() && rel != "." {
+				return fs.SkipDir
 			}
 			return nil
 		}
 		if d.IsDir() {
 			return nil
 		}
-		kind, ok := kindByExt[strings.ToLower(filepath.Ext(p))]
+		kind, ok := kindByExt[strings.ToLower(path.Ext(rel))]
 		if !ok {
 			return nil
 		}
@@ -90,11 +97,7 @@ func Scan(root string) (*Catalog, error) {
 		if err != nil {
 			return err
 		}
-		rel, err := filepath.Rel(root, p)
-		if err != nil {
-			return err
-		}
-		part := Classify(filepath.ToSlash(rel))
+		part := Classify(rel)
 		part.Kind = kind
 		part.Bytes = info.Size()
 		part.modTime = info.ModTime()

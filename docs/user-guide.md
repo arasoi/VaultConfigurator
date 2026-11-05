@@ -18,8 +18,9 @@ the internet.
 
 ## Getting started
 
-1. Start the app with your data folder: `go run . -data Data` (or the built binary, see the
-   README's [Running](../README.md#running) section).
+1. Start the app with your data folder, for example `vault-configurator -data Data`. See the
+   README's [Installing and running](../README.md#installing-and-running) section for downloads
+   and instructions for each operating system.
 2. Open <http://localhost:8080>. The **Build** tab opens with an example build.
 3. Change the build on the left, check it in the 3D view, then use **Download STLs** on the
    right to get a ZIP of everything to print.

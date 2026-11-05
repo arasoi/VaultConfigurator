@@ -104,50 +104,190 @@ Data/
 
 Files the app doesn't recognise still appear in the **Parts library** tab, under *Other*.
 
-## Running
+## Installing and running
 
-Requires Go 1.24+ and the data folder described above.
+The app is a single program with the website built in. Download a ready-made build for your
+system from the [Releases page](https://github.com/arasoi/VaultConfigurator/releases), or
+[build it from source](#building-from-source). Either way, it needs the
+[data folder](#data-files-not-included) described above.
+
+Once it's running, open <http://localhost:8080> in your browser. The first time a large part is
+shown, the app prepares a lightweight 3D preview of it, which can take a few seconds; after that it
+loads instantly. Use `-warm` to prepare every preview in the background at start-up.
+
+### Which file to download
+
+| Your computer | Download |
+| --- | --- |
+| Windows 10/11 PC (Intel or AMD) | `vault-configurator_<version>_windows_amd64.zip` |
+| Windows on ARM (Snapdragon laptops, Surface Pro X) | `…_windows_arm64.zip` |
+| 32-bit Windows | `…_windows_386.zip` |
+| Mac with Apple silicon (M1 and later) | `…_darwin_arm64.tar.gz` |
+| Mac with an Intel processor | `…_darwin_amd64.tar.gz` |
+| Linux PC or server (Intel or AMD), most x86 NAS boxes | `…_linux_amd64.tar.gz` |
+| Raspberry Pi 3/4/5 with a 64-bit OS, other 64-bit ARM boards and NAS boxes | `…_linux_arm64.tar.gz` |
+| Raspberry Pi 2/3/4 with a 32-bit OS | `…_linux_armv7.tar.gz` |
+| Raspberry Pi Zero / 1 | `…_linux_armv6.tar.gz` |
+| FreeBSD (also TrueNAS CORE), OpenBSD, NetBSD, DragonFly BSD | `…_freebsd_amd64.tar.gz`, `…_openbsd_amd64.tar.gz`, … |
+| Other systems and processors | Every platform Go supports has a build, including illumos, Solaris, AIX, Plan 9, Android (Termux), and Linux on RISC-V, LoongArch, MIPS, PowerPC and s390x. Pick the one named after your system and processor. |
+
+Each archive holds the program, this README and the licence. To check a download, compare it
+against `SHA256SUMS.txt` on the release page (for example `sha256sum -c SHA256SUMS.txt
+--ignore-missing` on Linux, or `Get-FileHash` in PowerShell).
+
+If you start the program without `-data`, it looks for a `Data` folder in the current folder,
+then next to the program itself. Putting `Data` next to the program therefore works even when
+you start it by double-clicking.
+
+### Windows
+
+1. Extract the zip (right-click, **Extract All…**).
+2. Put your `Data` folder next to `vault-configurator.exe`, or note where it is.
+3. Start it:
+   - double-click `vault-configurator.exe`. A console window opens and shows the log; closing
+     the window stops the app.
+   - or in PowerShell, from the extracted folder:
+
+     ```powershell
+     .\vault-configurator.exe -data "D:\VAULT\Data"
+     ```
+
+4. Open <http://localhost:8080>.
+
+The program isn't code-signed, so Windows SmartScreen may say "Windows protected your PC": click
+**More info**, then **Run anyway**. Windows Firewall may ask whether to allow network access.
+Allow it on private networks if you want to use the app from other devices; for this computer
+only, cancel the prompt and start the app with `-addr 127.0.0.1:8080`.
+
+### macOS
+
+1. Double-click the `.tar.gz` to extract it, or in Terminal:
+
+   ```bash
+   tar -xzf vault-configurator_*_darwin_arm64.tar.gz
+   cd vault-configurator_*_darwin_arm64
+   ```
+
+2. The program isn't signed or notarised, so macOS blocks it the first time. Clear the download
+   quarantine in Terminal, from the extracted folder:
+
+   ```bash
+   xattr -d com.apple.quarantine vault-configurator
+   ```
+
+   Or try to open it once, then go to **System Settings → Privacy & Security** and click
+   **Open Anyway**.
+3. Start it from Terminal, then open <http://localhost:8080>:
+
+   ```bash
+   ./vault-configurator -data ~/VAULT/Data
+   ```
+
+   With the `Data` folder next to the program, you can also double-click it in Finder. It opens
+   in a Terminal window; closing that window stops the app.
+
+### Linux (including Raspberry Pi and NAS boxes)
 
 ```bash
-go run . -data Data
+tar -xzf vault-configurator_*_linux_amd64.tar.gz
+cd vault-configurator_*_linux_amd64
+./vault-configurator -data /path/to/Data
 ```
 
-Open <http://localhost:8080>.
+Use the archive that matches your machine (see [the table](#which-file-to-download); on a
+Raspberry Pi, `uname -m` prints `aarch64` for arm64 or `armv7l` for armv7). Open
+<http://localhost:8080>, or `http://<machine-ip>:8080` from another computer on your network.
 
-Build a single self-contained binary (the web front end is embedded):
+To keep it running in the background and start it at boot, install it as a systemd service.
+Copy the program to `/opt/vault-configurator/`, then create
+`/etc/systemd/system/vault-configurator.service`:
+
+```ini
+[Unit]
+Description=VAULT Configurator
+After=network.target
+
+[Service]
+ExecStart=/opt/vault-configurator/vault-configurator -data /srv/vault/Data -cache /var/cache/vault-configurator -warm
+DynamicUser=yes
+CacheDirectory=vault-configurator
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
 
 ```bash
-go build -o vault-configurator .
-./vault-configurator -data /path/to/Data -addr :8080
+sudo systemctl daemon-reload
+sudo systemctl enable --now vault-configurator
+journalctl -u vault-configurator -f    # follow the log
 ```
 
-Cross-compile for a NAS / Raspberry Pi / Windows box, for example:
+`DynamicUser` runs the app as a throwaway user, so the data folder must be readable by everyone.
+Replace it with `User=yourname` if your files are private.
+
+### FreeBSD, OpenBSD, NetBSD and other Unix systems
+
+These run the same way as on Linux: extract the archive, then run
+`./vault-configurator -data /path/to/Data`. To keep it running after you log out on FreeBSD, use
+`daemon(8)`:
 
 ```bash
-GOOS=linux GOARCH=arm64 go build -o vault-configurator-linux-arm64 .
+daemon -f -o /var/log/vault-configurator.log /usr/local/bin/vault-configurator -data /path/to/Data
 ```
 
-Or with Docker (data mounted read-only, preview cache in a volume):
+### Android (Termux)
+
+In [Termux](https://termux.dev), extract the `android_arm64` archive and run
+`termux-setup-storage` once, so the app can read your VAULT files from shared storage. Then run
+`./vault-configurator -data ~/storage/shared/VAULT/Data` and open <http://localhost:8080> in your
+phone's browser.
+
+### Docker
+
+Data is mounted read-only and the preview cache is kept in a volume:
 
 ```bash
 docker build -t vault-configurator .
 docker run -p 8080:8080 -v "$PWD/Data:/data:ro" -v vault-cache:/cache vault-configurator
 ```
 
-The first time a large part is shown, the app prepares a lightweight 3D preview of it, which can
-take a few seconds; after that it loads instantly. Use `-warm` to prepare every preview in the
-background at start-up.
+### Building from source
 
-### Flags
+Requires [Go](https://go.dev/dl/) 1.24 or newer.
+
+```bash
+go run . -data Data
+```
+
+Build a single self-contained binary (the web front end is embedded):
+
+```bash
+go build -o vault-configurator .
+./vault-configurator -data /path/to/Data
+```
+
+Cross-compile for another system by setting `GOOS` and `GOARCH`, for example a 64-bit Raspberry
+Pi:
+
+```bash
+GOOS=linux GOARCH=arm64 go build -o vault-configurator-linux-arm64 .
+```
+
+To build every release archive at once, run `go run ./tools/release -version v1.0.0`. The
+archives go to `dist/`.
+
+### Options
 
 | Flag        | Default | Purpose                                                                 |
 | ----------- | ------- | ----------------------------------------------------------------------- |
 | `-data`     | `Data`  | Folder with the VAULT files (scanned recursively at start-up)           |
-| `-addr`     | `:8080` | Listen address                                                          |
+| `-addr`     | `:8080` | Listen address; `127.0.0.1:8080` keeps it to this computer              |
 | `-cache`    | `cache` | Where generated preview meshes are stored                               |
 | `-warm`     | `false` | Pre-generate every preview in the background at start-up                |
-| `-workers`  | ½ CPUs  | Concurrent preview generators (each can use a few hundred MB on big files) |
+| `-workers`  | half the CPUs, up to 4 | Concurrent preview generators (each can use a few hundred MB on big files) |
 | `-max-tris` | 150000  | Triangle budget per preview mesh                                        |
+| `-version`  |         | Print the version and exit                                              |
 
 ## Limitations
 

@@ -1,0 +1,52 @@
+name: Release
+
+# Push a version tag to publish a release with builds for every platform:
+#   git tag v1.0.0 && git push origin v1.0.0
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to (re)build a release for, e.g. v1.0.0
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build and package every platform
+        run: go run ./tools/release -version "$TAG" -out dist
+
+      - name: Smoke test the Linux build
+        run: |
+          tar -xzf "dist/vault-configurator_${TAG}_linux_amd64.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/vault-configurator_${TAG}_linux_amd64/vault-configurator" -version
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --title "$TAG" --generate-notes $prerelease
+          fi

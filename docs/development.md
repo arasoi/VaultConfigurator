@@ -56,6 +56,31 @@ recognised or placed correctly, fix it in code. If a future VAULT release change
 rules to update are in `internal/catalog/catalog.go` (file classification) and `web/js/rules.js`
 (which files a build uses).
 
+### CI and releases
+
+- **CI** (`.github/workflows/ci.yml`, on pushes to `main` and pull requests): `go vet` and
+  `go test` on Linux, Windows and macOS, with both the Go version from `go.mod` and the latest
+  stable Go. A second job checks `gofmt`, builds and packages a few platforms with the release
+  builder, and runs the Linux binary with `-version`.
+- **Releases** (`.github/workflows/release.yml`): push a tag starting with `v` to publish a
+  GitHub release with a build for every platform. Tags containing `-` (e.g. `v1.0.0-rc1`) are
+  marked as pre-releases. The workflow can also be run by hand for an existing tag; it re-uploads
+  the files.
+
+  ```bash
+  git tag v1.0.0
+  git push origin v1.0.0
+  ```
+
+- **Release builder** (`tools/release`): cross-compiles with `CGO_ENABLED=0` for every
+  platform in `go tool dist list`, stamps the version (`-X main.version`, shown by `-version`
+  and in the start-up log), and packages each build with the README and licence: `.zip` for
+  Windows, `.tar.gz` elsewhere, plus `SHA256SUMS.txt`. 32-bit ARM Linux is built for ARMv6 and
+  ARMv7. It skips platforms that can't produce a usable server: Android on 386/amd64/arm and iOS
+  need cgo and a platform SDK to link, and `js/wasm` / `wasip1/wasm` can't listen for HTTP
+  connections. Run it locally with `go run ./tools/release -version v1.0.0` (or `-only
+  linux/amd64,windows/amd64` for a quick test). All platforms build in about 15 seconds.
+
 **Screenshots** for the README and user guide live in `docs/images`. To regenerate them after UI
 changes, run the app and `node docs/capture-screenshots.mjs`. It drives headless Chrome over the
 DevTools protocol (Node 22+, no packages); see the comment at the top of the script for options.
@@ -115,6 +140,8 @@ docs/user-guide.md          user documentation
 docs/development.md         this file
 docs/images/                screenshots used by the README and user guide
 docs/capture-screenshots.mjs  regenerates docs/images from the running app (headless Chrome)
+tools/release/              cross-compiles and packages every platform for a release
+.github/workflows/          CI (vet + tests) and the tag-triggered release
 ```
 
 ## API

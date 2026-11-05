@@ -1,6 +1,8 @@
 package catalog
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -66,5 +68,28 @@ func TestCleanFolderKeepsDecimals(t *testing.T) {
 		if got := CleanFolder(in); got != want {
 			t.Errorf("CleanFolder(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// A data folder that is itself a symlink (e.g. to a NAS) is scanned.
+func TestScanSymlinkedRoot(t *testing.T) {
+	real := t.TempDir()
+	p := filepath.Join(real, "VAULT", "01. DRAWERS", "07. Universal", "Latch.stl")
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("solid x\nendsolid x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "Data")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("can't create symlinks here: %v", err)
+	}
+	c, err := Scan(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Parts) != 1 || c.Parts[0].Name != "Latch" {
+		t.Fatalf("got %d parts", len(c.Parts))
 	}
 }

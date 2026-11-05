@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Go ${{ matrix.go }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        go: [go.mod, stable]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.go == 'go.mod' && 'go.mod' || '' }}
+          go-version: ${{ matrix.go == 'stable' && 'stable' || '' }}
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+  release-build:
+    name: Release build (sample platforms)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Check formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Run gofmt on:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Build and package
+        run: go run ./tools/release -version ci -only linux/amd64,linux/arm,windows/amd64,darwin/arm64,freebsd/amd64
+
+      - name: Smoke test
+        run: |
+          tar -xzf dist/vault-configurator_ci_linux_amd64.tar.gz -C dist
+          dist/vault-configurator_ci_linux_amd64/vault-configurator -version
