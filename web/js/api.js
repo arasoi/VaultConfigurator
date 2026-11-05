@@ -39,6 +39,29 @@ export async function rescanCatalog() {
   return c;
 }
 
+async function catalogReply(r, what) {
+  if (!r.ok) throw new Error((await r.text().catch(() => '')).trim() || `${what}: HTTP ${r.status}`);
+  const c = indexCatalog(await r.json());
+  catalogPromise = Promise.resolve(c);
+  return c;
+}
+
+/**
+ * Saves a generated bin to the server's bin library; returns the new catalog.
+ * meta: { key, name, params }. stl: ArrayBuffer, or null to only rename.
+ */
+export async function saveBin(meta, stl) {
+  const form = new FormData();
+  form.append('meta', JSON.stringify(meta));
+  if (stl) form.append('stl', new Blob([stl], { type: 'model/stl' }), `${meta.key}.stl`);
+  return catalogReply(await fetch('/api/bins', { method: 'POST', body: form }), 'save');
+}
+
+/** Removes a bin from the library; returns the new catalog. */
+export async function deleteBin(key) {
+  return catalogReply(await fetch(`/api/bins/${encodeURIComponent(key)}`, { method: 'DELETE' }), 'delete');
+}
+
 export const fileUrl = (id, download = false) => `/api/file/${id}${download ? '?download' : ''}`;
 
 /** items: [{ id, qty, color? }] — color is a filament name; files are grouped into one folder per color. */

@@ -6,6 +6,7 @@ package catalog
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -33,8 +34,11 @@ type Part struct {
 	Variant  string   `json:"variant,omitempty"` // grid, table, bowl, heavyweight, flat, sealed, dividers, ...
 	Piece    string   `json:"piece,omitempty"`   // whole | 1 | 2 for split prints
 	Bytes    int64    `json:"bytes"`
+	// Bin: settings of a generated Gridfinity bin (category "bins"), for the front end.
+	Bin json.RawMessage `json:"bin,omitempty"`
 
 	modTime time.Time
+	abs     string // file outside the data folder (generated bins)
 }
 
 // ModTime returns the file modification time (used for cache keys).
@@ -62,6 +66,9 @@ func (c *Catalog) Get(id string) (*Part, bool) {
 
 // AbsPath returns the absolute file system path for a part.
 func (c *Catalog) AbsPath(p *Part) string {
+	if p.abs != "" {
+		return p.abs
+	}
 	return filepath.Join(c.Root, filepath.FromSlash(p.Path))
 }
 

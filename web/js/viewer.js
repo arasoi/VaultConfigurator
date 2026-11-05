@@ -270,6 +270,8 @@ export class Viewer {
     sun.position.set(800, 1600, 1000);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.bias = -0.0004; // no striping ("acne") on large flat faces
+    sun.shadow.normalBias = 0.6;
     Object.assign(sun.shadow.camera, { left: -1200, right: 1200, top: 1200, bottom: -1200, near: 10, far: 5000 });
     this.scene.add(sun);
     const fill = new THREE.DirectionalLight(0xffffff, 0.6);
@@ -636,6 +638,33 @@ export class Viewer {
     return pv;
   }
 
+  /**
+   * Shows a generated mesh (Y up, already in its final orientation) standing
+   * on the ground, e.g. a Gridfinity bin. refit: frame the camera on it.
+   */
+  showMesh(geometry, { refit = true, role = 'bin', color } = {}) {
+    this.mode = 'single';
+    this._single = {};
+    for (const o of this.objects.values()) this.root.remove(o.mesh);
+    this.objects.clear();
+    const g = geometry.clone();
+    g.computeBoundingBox();
+    const bb = g.boundingBox;
+    const c = bb.getCenter(new THREE.Vector3());
+    g.translate(-c.x, -bb.min.y, -c.z);
+    const prev = this._shown;
+    this._shown = creasedNormals(g);
+    prev?.dispose();
+    const mesh = new THREE.Mesh(this._shown, color ? colorMaterial(color) : materialFor(role));
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.userData.key = 'single';
+    this.root.add(mesh);
+    this.objects.set('single', { mesh, pl: { key: 'single', role }, loaded: true });
+    if (refit) this.fit();
+    this.requestRender();
+  }
+
   /** Rotates the single part 90° around an axis (library mode). */
   rotateSingle(axis) {
     const o = this.objects.get('single');
@@ -661,7 +690,10 @@ export class Viewer {
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
     const r = Math.max(size.x, size.y, size.z) * 0.5;
-    const dist = (r / Math.sin(THREE.MathUtils.degToRad(this.camera.fov / 2))) * 1.35;
+    // Fit the narrower of the vertical and horizontal fields of view.
+    const vHalf = THREE.MathUtils.degToRad(this.camera.fov / 2);
+    const hHalf = Math.atan(Math.tan(vHalf) * this.camera.aspect);
+    const dist = (r / Math.sin(Math.min(vHalf, hHalf))) * 1.35;
     const dir = new THREE.Vector3(0.62, 0.42, 0.86).normalize();
     this.controls.target.copy(center);
     this.camera.position.copy(center).addScaledVector(dir, dist);

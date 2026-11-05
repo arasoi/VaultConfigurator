@@ -21,6 +21,7 @@
       <div class="brand"><span class="logo" aria-hidden="true"></span>VAULT <small>Configurator</small></div>
       <nav class="tabs" role="tablist">
         <button role="tab" data-tab="build" aria-selected="true">Build</button>
+        <button role="tab" data-tab="bins" aria-selected="false">Bins</button>
         <button role="tab" data-tab="library" aria-selected="false">Parts library</button>
         <button role="tab" data-tab="docs" aria-selected="false">Documentation</button>
       </nav>
@@ -45,6 +46,21 @@
           <div class="pick-card" id="pick" hidden></div>
         </div>
         <aside class="panel" id="bom" aria-label="Parts list"></aside>
+      </section>
+
+      <!-- Gridfinity bins -->
+      <section class="tab-page" id="tab-bins">
+        <aside class="panel" id="bin-config" aria-label="Bin settings"></aside>
+        <div class="stage">
+          <div class="viewer" id="bin-viewer"></div>
+          <div class="viewer-toolbar">
+            <span class="muted" id="bin-stats"></span>
+            <button class="btn ghost" id="bin-fit">Fit view</button>
+          </div>
+          <div class="viewer-status" id="bin-status" hidden></div>
+          <div class="dims" id="bin-dims"></div>
+        </div>
+        <aside class="panel" id="bin-library" aria-label="Bin library"></aside>
       </section>
 
       <!-- Library -->

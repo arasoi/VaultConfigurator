@@ -47,6 +47,7 @@ export const COLOR_GROUPS = [
   { key: 'mechanism', label: 'Drawer lock (springs, racks, latch, stoppers)', roles: ['spring', 'grail', 'dlatch', 'stopper'] },
   { key: 'runner', label: 'Runner guides & slides', roles: ['guide', 'slide'] },
   { key: 'inserts', label: 'Baseplates & dividers', roles: ['gridplate', 'sbaseplate', 'divider', 'l2acc'] },
+  { key: 'bins', label: 'Gridfinity bins', roles: ['bin'] },
   { key: 'internal', label: 'Other internal parts', roles: [] },
 ];
 
@@ -71,6 +72,7 @@ const CLASSIC = {
   mechanism: F.Orange,
   accessories: F['Light Grey'],
   runner: F['Light Grey'],
+  bins: F['Light Grey'],
   internal: F.Orange,
 };
 
@@ -89,12 +91,12 @@ export const PRESETS = [
   {
     key: 'arctic',
     label: 'Arctic',
-    groups: { ...CLASSIC, body: F.White, facade: F.White, base: F.White, box: F.Cyan, knob: F.Cyan, latch: F.Cyan, caps: F.White, holder: F.White, hinge: F.Cyan, feet: F.Silver, back: F.Silver, inserts: F.Cyan, internal: F.Cyan },
+    groups: { ...CLASSIC, body: F.White, facade: F.White, base: F.White, box: F.Cyan, knob: F.Cyan, latch: F.Cyan, caps: F.White, holder: F.White, hinge: F.Cyan, feet: F.Silver, back: F.Silver, inserts: F.Cyan, internal: F.Cyan, bins: F.White },
   },
   {
     key: 'toybox',
     label: 'Toy box',
-    groups: { ...CLASSIC, body: F.White, facade: F.Yellow, box: F.Blue, knob: F.Red, latch: F.Red, caps: F.Red, label: F.White, hinge: F.Blue, holder: F.White, feet: F.Blue, back: F.Blue, inserts: F.Blue, internal: F.Green },
+    groups: { ...CLASSIC, body: F.White, facade: F.Yellow, box: F.Blue, knob: F.Red, latch: F.Red, caps: F.Red, label: F.White, hinge: F.Blue, holder: F.White, feet: F.Blue, back: F.Blue, inserts: F.Blue, internal: F.Green, bins: F.Yellow },
   },
 ];
 
@@ -112,6 +114,7 @@ export function bomGroup(entry) {
   if (/Heawyweight Roof (Handle|Insert)/i.test(n)) return 'knob';
   if (['Backbone & handles', 'Pegboard', 'Mounting'].includes(entry.section)) return 'back';
   if (entry.section === 'Pegboard accessories') return 'accessories';
+  if (entry.section === 'Gridfinity bins') return 'bins';
   return 'internal';
 }
 

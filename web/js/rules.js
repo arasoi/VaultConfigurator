@@ -5,6 +5,8 @@
 // and from measuring the STL files. Values marked "FIT" are visual fitting
 // guesses for the 3D preview only and do not affect the parts list.
 
+import { binHeight, binLabel, normalizeBin, SPEC as GF } from './gridfinity.js';
+
 // ---------------------------------------------------------------- dimensions
 
 export const SIZES = ['S', 'M', 'L', 'XL'];
@@ -13,6 +15,30 @@ export const HEIGHTS = [1, 2, 4];
 
 /** Outer module width per size (mm). L = S+S, XL = S+M. */
 export const WIDTH = { S: 164.8, M: 254.0, L: 329.6, XL: 418.8, L2: 329.6, XL2: 418.8 };
+/**
+ * Gridfinity cells (42 mm) across each drawer box / sustainer width, measured
+ * on the VAULT baseplates; front to back a footprint has as many cells as its
+ * depth number. (XL drawer plates use a 21 mm half grid; whole bins use 8.)
+ */
+export const GRID_CELLS = { drawer: { S: 3, M: 5, L: 6, XL: 8 }, sustainer: { S: 3, M: 5, L: 7, XL: 9 } };
+/**
+ * Tallest bin (mm, from the floor the bins stand on) per drawer box height /
+ * sustainer height. Drawers: the box rim (the VAULT grid dividers' "full
+ * height" for 1F and 2F). Sustainers: floor to the closed lid's underside,
+ * measured in the 3D layout, less 1 mm.
+ */
+export const BIN_MAX_H = { drawer: { 1: 34.5, 2: 82.5, 4: 178.5 }, sustainer: { 1: 52, 2: 86.5, 4: 182 } };
+/** Sustainer floor top above the module's bottom (bins stand on it, inside the baseplate grid). */
+const SUSTAINER_FLOOR = 4.8;
+
+/** Settings of a library bin part, or null. */
+export function binOf(part) {
+  return part?.category === 'bins' && part.bin?.params ? normalizeBin(part.bin.params) : null;
+}
+
+/** Cells a placed bin covers: [across, front to back]. rot: turned 90°. */
+export const binCells = (p, rot) => (rot ? [p.d, p.w] : [p.w, p.d]);
+
 /** Outer module depth for gridfinity depth units (42 mm each). */
 export const depthMM = (d) => 42 * d + 20.1;
 /** Drawer module outer height; modules stack with a 48 mm pitch per F. */
@@ -666,7 +692,7 @@ export function resolve(build, parts) {
   }
 
   // ---- final shape
-  const order = ['Drawers', 'Sustainers', 'Roof', 'Base & mobility', 'Backbone & handles', 'Pegboard', 'Mounting', 'Pegboard accessories', 'Extras', 'Print aids'];
+  const order = ['Drawers', 'Sustainers', 'Gridfinity bins', 'Roof', 'Base & mobility', 'Backbone & handles', 'Pegboard', 'Mounting', 'Pegboard accessories', 'Extras', 'Print aids'];
   out.bom = [...out.bomMap.values()].sort(
     (a, b) => order.indexOf(a.section) - order.indexOf(b.section) || a.part.path.localeCompare(b.part.path),
   );
@@ -976,7 +1002,7 @@ function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, add
     }
 
     // ---- Each box in the stack, with everything that rides on it.
-    for (const { lvl, h } of stack) {
+    for (const [bi, { lvl, h }] of stack.entries()) {
       const box = parts.wholeOrParts({ category: 'drawers', group: 'Boxes', size: bs, depth: d, height: h, variant: '' }, build.splitPrints);
       if (!box.files.length) missing(`${bs}${d} ${h}F box`, 'box');
       box.files.forEach((f) => addBom(f, 1, 'Drawers'));
@@ -1027,12 +1053,26 @@ function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, add
         }
         gp.files.forEach((f) => addBom(f, 1, 'Drawers', null, 'inserts'));
         if (!gp.files.length) missing(`${bs}${d} gridfinity baseplate`, 'gridplate');
-        place({
+        const gpl = place({
           partId: gp.show?.id || gp.files[0]?.id,
           files: gp.files.map((f) => f.id),
           role: 'gridplate',
           attach: { to: bp.key, yRef: 'bottom', y: 2, yAlign: 'above' },
           expect: [boxW - 8.4, null, D - 12.1],
+        });
+        // Bins planned for this box stand on the box floor (the plate is an open grid).
+        placeBins({
+          list: cfg.bins?.[bi],
+          cols: GRID_CELLS.drawer[bs],
+          rows: d,
+          maxH: BIN_MAX_H.drawer[h],
+          host: gpl,
+          y: 0,
+          where: `level ${li + 1}${shared ? (pi ? ' right' : ' left') : ''} ${h}F drawer${stack.length > 1 ? ` ${bi + 1}` : ''}`,
+          parts,
+          addBom,
+          place,
+          state,
         });
       }
 
@@ -1198,7 +1238,51 @@ function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, add
   }
 }
 
-function resolveSustainer({ size, F, d, D, col, slot, build, parts, addBom, addHw, place, hw, missing }) {
+/**
+ * Places the bins planned for one gridfinity space (a drawer box or a
+ * sustainer). list: [{ id, x, y, rot }] with x across from the left and y from
+ * the front, in cells. Bins that are gone from the library, don't fit the grid,
+ * overlap an earlier bin or are too tall are left out with a warning. The grid
+ * is centred on `host`; bins stand `y` mm above its bottom.
+ */
+function placeBins({ list, cols, rows, maxH, host, y, where, parts, addBom, place, state }) {
+  if (!Array.isArray(list) || !list.length || !host) return;
+  const warn = (msg) => state.warnings.includes(msg) || state.warnings.push(msg);
+  const taken = new Set();
+  for (const b of list) {
+    const part = parts.byId.get(b.id);
+    const p = binOf(part);
+    if (!p) {
+      warn(`A bin planned for the ${where} is no longer in the bin library; it was left out.`);
+      continue;
+    }
+    const [cw, cd] = binCells(p, b.rot);
+    const cells = [];
+    for (let i = 0; i < cw; i++) for (let j = 0; j < cd; j++) cells.push(`${b.x + i},${b.y + j}`);
+    if (b.x < 0 || b.y < 0 || b.x + cw > cols || b.y + cd > rows || cells.some((c) => taken.has(c))) {
+      warn(`"${part.name}" doesn't fit where it was planned in the ${where} (${cols}×${rows} grid); it was left out.`);
+      continue;
+    }
+    const tall = binHeight(p);
+    if (tall > maxH + 0.01) {
+      warn(`"${part.name}" is ${tall.toFixed(1)} mm tall; the ${where} has room for ${maxH} mm. It was left out.`);
+      continue;
+    }
+    cells.forEach((c) => taken.add(c));
+    addBom(part, 1, 'Gridfinity bins', binLabel(p), 'bins');
+    place({
+      partId: part.id,
+      role: 'bin',
+      attach: { to: host.key, x: (b.x + cw / 2 - cols / 2) * GF.pitch, yRef: 'bottom', y, yAlign: 'above', z: (rows / 2 - (b.y + cd / 2)) * GF.pitch },
+      // Generated bins are Z-up with the front at -Y: file X/Y/Z -> X / -Z / Y,
+      // or turned a quarter so the bin's width runs front to back.
+      xform: { origin: [0, 0, 0], rows: b.rot ? [[0, 1, 0], [0, 0, 1], [1, 0, 0]] : [[1, 0, 0], [0, 0, 1], [0, -1, 0]] },
+      expect: [cw * GF.pitch - GF.gap, tall, cd * GF.pitch - GF.gap],
+    });
+  }
+}
+
+function resolveSustainer({ size, F, d, D, col, slot, li, build, parts, addBom, addHw, place, hw, missing, state }) {
   const w = WIDTH[size];
   const big = size === 'L' || size === 'XL';
   let interior = col.interior || 'flat';
@@ -1383,6 +1467,19 @@ function resolveSustainer({ size, F, d, D, col, slot, build, parts, addBom, addH
     gp.files.forEach((f) => addBom(f, 1, 'Sustainers', null, 'inserts'));
     if (!gp.files.length) missing(`${size}${d} sustainer baseplate`, 'sbaseplate');
     place({ partId: gp.show?.id || gp.files[0]?.id, files: gp.files.map((f) => f.id), role: 'sbaseplate', attach: { to: mp.key, yRef: 'bottom', y: 3, yAlign: 'above' }, expect: [innerW - 4, null, innerD - 4] });
+    placeBins({
+      list: col.bins?.[0],
+      cols: GRID_CELLS.sustainer[size],
+      rows: d,
+      maxH: BIN_MAX_H.sustainer[F],
+      host: mp,
+      y: SUSTAINER_FLOOR,
+      where: `level ${li + 1} ${F}F sustainer`,
+      parts,
+      addBom,
+      place,
+      state,
+    });
   } else if (interior === 'dividers' || interior === 'sealed') {
     const across = clampInt(col.across ?? (big ? 1 : 2), 0, 8);
     const along = clampInt(col.along ?? (big ? (size === 'XL' ? 4 : 3) : 0), 0, 10);
@@ -1702,6 +1799,7 @@ function nominal(pl, build) {
 
 /** Readable names of placement roles (for warnings). */
 export const ROLE_NAME = {
+  bin: 'gridfinity bin',
   module: 'drawer module',
   smodule: 'sustainer module',
   lid: 'sustainer lid',
@@ -1734,6 +1832,7 @@ export const ROLE_NAME = {
 };
 
 export const COLORS = {
+  bin: 0xd4d6d8,
   module: 0xdcdedf,
   smodule: 0xdcdedf,
   lid: 0xe6e7e8,

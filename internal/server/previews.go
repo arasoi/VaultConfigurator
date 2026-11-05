@@ -125,7 +125,7 @@ func (pv *Previews) Get(p *catalog.Part, abs, lod string) (string, error) {
 	pv.mu.Unlock()
 
 	pv.sem <- struct{}{}
-	j.err = pv.generate(abs, key)
+	j.err = pv.generate(abs, key, p.Category == "bins")
 	<-pv.sem
 
 	pv.mu.Lock()
@@ -152,7 +152,9 @@ func (pv *Previews) Cached(p *catalog.Part) bool {
 	return true
 }
 
-func (pv *Previews) generate(abs, key string) (err error) {
+// generate makes both levels of detail. fixed: the file is already in its
+// final orientation (generated bins): centre it but don't rotate it.
+func (pv *Previews) generate(abs, key string, fixed bool) (err error) {
 	// A malformed file must not take the server down (Warm runs outside any
 	// HTTP handler, whose recovery would otherwise catch it).
 	defer func() {
@@ -170,7 +172,12 @@ func (pv *Previews) generate(abs, key string) (err error) {
 	if m.Tris() == 0 {
 		return mesh.ErrEmpty
 	}
-	o := mesh.Normalize(m)
+	var o mesh.Orientation
+	if fixed {
+		o = mesh.Center(m)
+	} else {
+		o = mesh.Normalize(m)
+	}
 	// The build level is simplified from the source too: decimating the
 	// already decimated preview again can stall and distort thin parts
 	// (facades lost up to 3 mm of width that way).

@@ -35,7 +35,9 @@ type Server struct {
 	Web      fs.FS
 
 	dataDir string
-	cat     atomic.Pointer[catalog.Catalog]
+	binsDir string                          // generated bins ("" = saving off)
+	dataCat *catalog.Catalog                // last data folder scan (scanMu)
+	cat     atomic.Pointer[catalog.Catalog] // data + bins
 	status  atomic.Pointer[DataStatus]
 	scanMu  sync.Mutex
 	etags   map[string]string // embedded front end: path -> ETag
@@ -49,13 +51,15 @@ type DataStatus struct {
 	Error   string `json:"error,omitempty"` // why not
 	Parts   int    `json:"parts"`           // files found
 	Skipped int    `json:"skipped"`         // entries that couldn't be read
+	Bins    bool   `json:"bins"`            // bins can be saved (-bins set)
 }
 
 // New scans dataDir and returns a server. A missing or unreadable data folder
 // is not fatal: the site starts and explains how to set it up, and
-// POST /api/rescan picks the files up once they are there.
-func New(dataDir string, pv *Previews, web fs.FS) *Server {
-	s := &Server{Previews: pv, Web: web, dataDir: dataDir}
+// POST /api/rescan picks the files up once they are there. Generated bins are
+// saved in binsDir ("" turns saving off).
+func New(dataDir, binsDir string, pv *Previews, web fs.FS) *Server {
+	s := &Server{Previews: pv, Web: web, dataDir: dataDir, binsDir: binsDir}
 	s.etags = staticETags(web)
 	s.Rescan()
 	return s
@@ -75,7 +79,7 @@ func (s *Server) Rescan() *catalog.Catalog {
 	if err != nil {
 		abs = s.dataDir
 	}
-	st := &DataStatus{Dir: abs}
+	st := &DataStatus{Dir: abs, Bins: s.binsDir != ""}
 	t := time.Now()
 	cat, err := catalog.Scan(s.dataDir)
 	switch {
@@ -90,17 +94,17 @@ func (s *Server) Rescan() *catalog.Catalog {
 	default:
 		st.Found = true
 		log.Printf("catalog: %d files from %s in %v", len(cat.Parts), cat.Root, time.Since(t).Round(time.Millisecond))
-		if s.Previews != nil {
-			go s.Previews.Prune(cat)
-		}
 	}
 	for _, sk := range cat.Skipped {
 		log.Printf("catalog: skipped %s", sk)
 	}
 	st.Parts, st.Skipped = len(cat.Parts), len(cat.Skipped)
-	s.cat.Store(cat)
+	s.publish(cat)
 	s.status.Store(st)
-	return cat
+	if s.Previews != nil && st.Error == "" {
+		go s.Previews.Prune(s.Catalog())
+	}
+	return s.Catalog()
 }
 
 func errText(err error) string {
@@ -121,6 +125,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/preview/{id}", s.preview)
 	mux.HandleFunc("GET /api/file/{id}", s.file)
 	mux.HandleFunc("GET /api/zip", s.zip)
+	mux.Handle("POST /api/bins", compress(http.HandlerFunc(s.saveBin)))
+	mux.Handle("DELETE /api/bins/{key}", compress(http.HandlerFunc(s.deleteBin)))
 	mux.Handle("GET /", compress(s.static(http.FileServerFS(s.Web))))
 	return logRequests(mux)
 }
@@ -405,7 +411,7 @@ type gzipWriter struct {
 func compressible(ct string) bool {
 	ct, _, _ = strings.Cut(ct, ";")
 	switch strings.TrimSpace(ct) {
-	case "text/html", "text/css", "text/javascript", "application/javascript", "application/json", "image/svg+xml", "text/plain":
+	case "text/html", "text/css", "text/javascript", "application/javascript", "application/json", "image/svg+xml", "text/plain", "application/wasm":
 		return true
 	}
 	return false

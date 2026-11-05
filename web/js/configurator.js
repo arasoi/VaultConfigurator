@@ -2,8 +2,12 @@
 import { COLOR_GROUPS, FILAMENTS, PRESETS, ensureColors, filamentName, groupColor } from './colors.js';
 import { check, h, section, select, seg } from './dom.js';
 import { HW_FINISHES } from './hardware.js';
+import { openPlanner } from './planner.js';
 import {
   accessoryLabel,
+  BIN_MAX_H,
+  boxStack,
+  GRID_CELLS,
   boxSplits,
   BASES,
   DEPTHS,
@@ -25,6 +29,9 @@ import {
 } from './rules.js';
 
 const STORAGE_KEY = 'vault-configurator:build';
+
+/** Set by main.js: switch to the Bins tab. */
+export const configHooks = { openBinsTab: null };
 
 // ---------------------------------------------------------------- persistence
 
@@ -84,6 +91,22 @@ export function levelHeights(build, level, parts) {
 }
 
 /** Makes a build consistent with the catalog (valid layouts, heights, types). */
+/**
+ * Planned bins: per box in the stack (bottom first), a list of { id, x, y, rot }
+ * in grid cells. Only the shape is checked here; whether each bin still exists
+ * and fits is decided when the build is resolved (with a warning), so changing
+ * the depth back and forth doesn't throw a plan away.
+ */
+function cleanBins(bins) {
+  if (!Array.isArray(bins)) return [];
+  return bins.slice(0, 8).map((list) =>
+    (Array.isArray(list) ? list : [])
+      .filter((b) => b && typeof b.id === 'string' && b.id.length < 100)
+      .slice(0, 200)
+      .map((b) => ({ id: b.id, x: Math.max(0, Math.min(20, Math.round(Number(b.x) || 0))), y: Math.max(0, Math.min(20, Math.round(Number(b.y) || 0))), rot: !!b.rot })),
+  );
+}
+
 export function sanitize(build, parts) {
   const b = { ...defaultBuild(), ...build };
   if (!SIZES.includes(b.width)) b.width = 'L';
@@ -117,6 +140,7 @@ export function sanitize(build, parts) {
       if (sideSizes) {
         c.sides = sideSizes.map((bs, k) => {
           const sd = { interior: c.interior, boxes: c.boxes, across: c.across, along: c.along, divTall: c.divTall, ...((c.sides || [])[k] || {}) };
+          sd.bins = cleanBins(sd.bins);
           if (!DRAWER_INTERIORS.some((o) => o.key === sd.interior)) sd.interior = 'empty';
           if (!drawerSplits(bs, b.depth, level.height, parts).some((sp) => sameList(sp, sd.boxes))) sd.boxes = [level.height];
           return sd;
@@ -128,6 +152,10 @@ export function sanitize(build, parts) {
       const ok = drawerSplits(size, b.depth, level.height, parts).some((sp) => sameList(sp, c.boxes));
       if (!ok) c.boxes = [level.height];
     });
+    for (const c of level.cols) {
+      if (c.sides) delete c.bins;
+      else c.bins = cleanBins(c.bins);
+    }
     return level;
   });
   if (!ROOFS.some((r) => r.key === b.roof) && b.roof !== 'none') b.roof = 'grid';
@@ -353,6 +381,16 @@ function renderLevel(build, i, parts, update) {
               ),
               boxPicker({ ...sd, type: 'drawer' }, bs, lv.height, build.depth, parts, (v) => mutSide((x) => void (x.boxes = v))),
               dividerControls({ ...sd, type: 'drawer' }, bs, mutSide),
+              binControls({
+                cfg: sd,
+                kind: 'drawer',
+                size: bs,
+                F: lv.height,
+                depth: build.depth,
+                where: `Level ${i + 1} · ${k === 0 ? 'left' : 'right'} ${bs} drawer`,
+                parts,
+                setBins: (bi, list) => mutSide((x) => setBinList(x, bi, list)),
+              }),
             );
           }),
         ),
@@ -377,6 +415,16 @@ function renderLevel(build, i, parts, update) {
       ),
       boxPicker(c, size, lv.height, build.depth, parts, (v) => mut((l) => void (l.cols[ci].boxes = v))),
       dividerControls(c, size, (fn) => mut((l) => fn(l.cols[ci]))),
+      binControls({
+        cfg: c,
+        kind: c.type,
+        size,
+        F: lv.height,
+        depth: build.depth,
+        where: `Level ${i + 1}${layout.cols.length > 1 ? ` · ${SIZE_LABEL[size]}` : ''} ${c.type}`,
+        parts,
+        setBins: (bi, list) => mut((l) => setBinList(l.cols[ci], bi, list)),
+      }),
     );
   });
 
@@ -615,6 +663,53 @@ function splitLabel(sp) {
 }
 
 /** "Drawers inside" picker for tall drawer modules (e.g. 4F = 2F + 1F + 1F). */
+function setBinList(target, bi, list) {
+  target.bins = Array.isArray(target.bins) ? target.bins : [];
+  while (target.bins.length <= bi) target.bins.push([]);
+  target.bins[bi] = list;
+}
+
+/**
+ * "Bins" buttons for a column (or L²/XL² side) with a Gridfinity baseplate:
+ * one per drawer box in the stack, or one for a sustainer. Each opens the
+ * planner for that space.
+ */
+function binControls({ cfg, kind, size, F, depth, where, parts, setBins }) {
+  const gridfinity = kind === 'drawer' ? cfg.interior?.startsWith('gridfinity') : cfg.interior === 'gridfinity';
+  const cols = GRID_CELLS[kind]?.[size];
+  if (!gridfinity || !cols) return null;
+  const library = parts.all.filter((p) => p.category === 'bins');
+  const spaces = kind === 'drawer' ? boxStack(cfg.boxes, F).map((b, bi) => ({ bi, h: b.h })) : [{ bi: 0, h: F }];
+  const multi = spaces.length > 1;
+  return h(
+    'div.bin-controls',
+    spaces.map(({ bi, h: bh }) => {
+      const list = cfg.bins?.[bi] || [];
+      const maxH = BIN_MAX_H[kind][bh];
+      const title = `${where}${multi ? ` ${bi + 1} (${bh}F)` : ''}`;
+      return h(
+        'button.btn.sm.bin-btn',
+        {
+          type: 'button',
+          title: `Plan Gridfinity bins: ${cols} × ${depth} cells, up to ${maxH} mm tall`,
+          onclick: () =>
+            openPlanner({
+              title,
+              cols,
+              rows: depth,
+              maxH,
+              list,
+              library,
+              onChange: (next) => setBins(bi, next),
+              onEditLibrary: configHooks.openBinsTab,
+            }),
+        },
+        `▦ Bins${multi ? ` · drawer ${bi + 1}` : ''}: ${list.length ? `${list.length} placed` : 'plan…'}`,
+      );
+    }),
+  );
+}
+
 function boxPicker(c, size, F, depth, parts, onChange) {
   if (c.type !== 'drawer' || F < 2) return null;
   const splits = drawerSplits(size, depth, F, parts);

@@ -56,6 +56,23 @@ func Normalize(m *Mesh) Orientation {
 	return o
 }
 
+// Center moves the mesh's bounding box centre to the origin without rotating
+// it, for files that are already in a known orientation (generated bins).
+func Center(m *Mesh) Orientation {
+	o := Orientation{Rot: identity()}
+	mn, mx := bounds(m.Pos)
+	for k := 0; k < 3; k++ {
+		o.Center[k] = (mn[k] + mx[k]) / 2
+		o.Size[k] = mx[k] - mn[k]
+	}
+	for i := 0; i < len(m.Pos); i += 3 {
+		for k := 0; k < 3; k++ {
+			m.Pos[i+k] -= float32(o.Center[k])
+		}
+	}
+	return o
+}
+
 // Apply moves another mesh of the same part into this orientation's frame
 // (rotated, then centred like the mesh Normalize was given), e.g. a second
 // level of detail simplified from the same source.

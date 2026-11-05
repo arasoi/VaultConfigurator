@@ -34,6 +34,7 @@ func main() {
 	webDir := flag.String("web", "", "serve front end from this folder instead of the embedded copy (for development)")
 	maxTris := flag.Int("max-tris", 150000, "triangle budget per preview mesh")
 	workers := flag.Int("workers", max(1, min(4, runtime.NumCPU()/2)), "concurrent preview generators")
+	bins := flag.String("bins", "bins", `folder for generated Gridfinity bins ("" = don't allow saving)`)
 	warm := flag.Bool("warm", false, "pre-generate all previews in the background at start-up")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
@@ -64,7 +65,7 @@ func main() {
 
 	// A missing data folder isn't fatal: the site explains how to set it up
 	// and picks the files up with a rescan.
-	s := server.New(*data, pv, web)
+	s := server.New(*data, *bins, pv, web)
 	if st := s.Status(); st.Error != "" {
 		log.Printf("no VAULT files yet (%s: %s); the site will show setup instructions", st.Dir, st.Error)
 	}

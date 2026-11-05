@@ -21,6 +21,10 @@ measurements and fixes behind how each part is placed. For using the app, see th
   three.js is vendored in `web/vendor/three` so nothing loads from a CDN.
 - **Back end:** a single Go binary using only the standard library. It indexes the data folder,
   serves the site, generates lightweight 3D previews of the STLs, and streams ZIP downloads.
+- **Gridfinity bins** are built in the browser with [Manifold](https://github.com/elalish/manifold)
+  3.5.4 (Apache-2.0), vendored unmodified in `web/vendor/manifold` (~0.6 MB of WebAssembly,
+  loaded only when the Bins tab generates something). Bins need real solid booleans (pockets,
+  holes, scoops), and Manifold's output is always watertight. The server only stores the STLs.
 
 ### Why Go (and not .NET)
 
@@ -151,7 +155,8 @@ Data/  ──scan──▶  catalog (tags parsed from file names)  ──▶  /a
 main.go                     flags, start-up, embeds web/
 internal/catalog/           data folder scanner + file-name tagging (with tests)
 internal/mesh/              STL reader, simplifier, orientation, preview format (with tests)
-internal/server/            HTTP API, preview cache, ZIP streaming
+internal/server/            HTTP API, preview cache, ZIP streaming, bin library (bins.go)
+internal/catalog/bins.go    generated bins as catalog parts
 web/index.html              page shell
 web/css/app.css             all styles (light/dark tokens)
 web/js/main.js              wiring: tabs, state, panels
@@ -162,8 +167,12 @@ web/js/viewer.js            three.js scene
 web/js/orient.js            orientation from connection interfaces and mount faces
 web/js/colors.js            filament palette, colour groups, presets
 web/js/library.js           Parts library tab
+web/js/gridfinity.js        Gridfinity bin generator (Manifold), STL export
+web/js/bins.js              Bins tab: generator form, bin library
+web/js/planner.js           bin planner dialog (grid of one drawer / sustainer)
 web/js/docs.js              Documentation tab
 web/vendor/three/           three.js r170 (MIT)
+web/vendor/manifold/        Manifold 3.5.4 (Apache-2.0)
 docs/user-guide.md          user documentation
 docs/development.md         this file
 docs/images/                screenshots used by the README and user guide
@@ -180,11 +189,47 @@ tools/release/              cross-compiles and packages every platform for a rel
 | `POST /api/rescan`                         | Reads the data folder again; returns the new catalog    |
 | `GET /api/preview/{id}[?lod=build]`        | Simplified, oriented mesh (gzip `VMS1`); 404 if the file is gone, 422 if it isn't a usable STL (plain-text reason) |
 | `GET /api/file/{id}[?download]`            | Original file                                           |
+| `POST /api/bins`                           | Saves a bin: multipart `meta` (JSON `{key, name, params}`) + `stl`; without `stl` only renames. Returns the catalog |
+| `DELETE /api/bins/{key}`                   | Removes a bin from the library; returns the catalog     |
 | `GET /api/zip?name=x&items=id,id*3~Orange,…` | ZIP of originals; `*3` adds “(print x3)”, `~Orange` puts it in an `Orange/` folder; missing or unknown parts are left out and listed in `MISSING FILES.txt` |
 
 The front end and catalog are gzipped for clients that accept it, and the embedded front-end
 files carry content-hash ETags (they have no modification time), so a reload revalidates them with
 304s instead of downloading ~900 KB again.
+
+## Gridfinity bins
+
+**Generator** (`web/js/gridfinity.js`, constants in `SPEC`): 42 mm cells, bins 0.5 mm under
+size with 3.75 mm corners, 7 mm height units (a bin of `h` units is `7h` mm to the wall top). Each
+cell gets the standard 4.75 mm foot (0.8 chamfer, 1.8 straight, 2.15 chamfer). The stacking lip
+mirrors the foot with 0.25 mm clearance, is 4.4 mm tall with a 0.6 mm flat on top, and has a 45°
+support chamfer below. Walls and dividers are 1.2 mm. The floor is 6 mm thick, or 7 mm with screw
+holes. Magnet pockets are 6.5 × 2.4 mm and screw holes 3 × 6 mm, at ±13 mm from each cell's
+centre. Non-convex profiles are built as unions of convex hulls between consecutive
+rounded-rectangle sections, so they're exact. Scoops are a quarter-round fillet along each
+compartment's front wall, and label tabs a 45° shelf along its back wall. Generated files are Z-up
+in millimetres, centred on X/Y with the bottom at z = 0, and the front is −Y. A bin's `key` is
+derived from its settings, so the same settings always make the same file.
+
+**VAULT spaces** (`GRID_CELLS`, `BIN_MAX_H` in `rules.js`): cell counts measured on the baseplates
+(cell ridges at 42 mm; the XL drawer plate has a 21 mm half grid but takes 8 whole cells across).
+Drawer baseplates are open grids lying on the box floor, so bins stand on the floor: the limit is
+the box rim, matching the grid dividers' "full height" (34.5 / 82.5 mm), and 178.5 mm for 4F.
+Sustainer baseplates are an open grid with two lifting rails; bins stand on the sustainer floor
+(4.8 mm above the module bottom), and the limit is the closed lid's flat underside measured in the
+layout, less 1 mm.
+
+**Library**: `bins/<key>.stl` + `bins/<key>.json` (name, settings, creation date), merged into the
+catalog as parts `bin-<key>` in category `bins` with the settings in `part.bin`, so previews, file
+downloads and ZIPs need nothing special. Uploads must parse as STL (≤ 64 MB, ≤ 2 M triangles). Bin
+previews are centred but not rotated (`mesh.Center`), and placements map the file's Z-up frame with
+an explicit `xform`. Anyone who can reach the server can add and delete bins; `-bins ""` turns that
+off.
+
+**Planner and placement**: per drawer box (bottom first) or sustainer, `bins: [[{ id, x, y, rot }]]`
+on the column (or `sides[k]` for L²/XL²), in cells from the front-left. `resolve()` drops bins that
+are gone, overlap, leave the grid or are too tall (with a warning) and attaches the rest to the box's
+baseplate (drawers) or the module floor (sustainers), so they move with the drawer.
 
 ## Colours
 

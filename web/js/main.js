@@ -2,7 +2,9 @@
 import { loadCatalog, rescanCatalog } from './api.js';
 import { markBomRow, renderBom } from './bom.js';
 import { placementColor, filamentName, groupOfRole, COLOR_GROUPS } from './colors.js';
-import { loadInitialBuild, paletteRow, renderConfig, sanitize, saveBuild, shareUrl, swatchInput } from './configurator.js';
+import { configHooks, loadInitialBuild, paletteRow, renderConfig, sanitize, saveBuild, shareUrl, swatchInput } from './configurator.js';
+import { initBins } from './bins.js';
+import { closePlanner } from './planner.js';
 import { renderDocs } from './docs.js';
 import { h } from './dom.js';
 import { initLibrary } from './library.js';
@@ -38,6 +40,7 @@ for (const btn of document.querySelectorAll('.tabs button')) {
   btn.onclick = () => showTab(btn.dataset.tab);
 }
 function showTab(name) {
+  closePlanner();
   for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === name));
   for (const p of document.querySelectorAll('.tab-page')) p.classList.toggle('active', p.id === `tab-${name}`);
   tabInit[name]?.();
@@ -108,7 +111,7 @@ if (!catalog.parts.some((p) => p.kind === 'stl')) {
   showSetup(catalog.data);
   await new Promise(() => {}); // nothing to build: stop here (the rescan reloads the page)
 }
-const parts = new Parts(catalog);
+let parts = new Parts(catalog);
 
 let build = sanitize(loadInitialBuild(), parts);
 saveBuild(build);
@@ -311,7 +314,9 @@ if (catalog.data?.skipped) toast(`${catalog.data.skipped} item(s) in the data fo
 // Handy from the dev tools console: vault.viewer, vault.build, vault.res
 window.vault = {
   viewer,
-  catalog,
+  get catalog() {
+    return catalog;
+  },
   update,
   get build() {
     return build;
@@ -321,11 +326,39 @@ window.vault = {
   },
 };
 
+/** The catalog changed (bins saved or deleted): refresh every view of it. */
+function setCatalog(c) {
+  catalog = c;
+  parts = new Parts(c);
+  build = sanitize(build, parts);
+  libraryView?.refresh(c);
+  binsView?.refresh();
+  render();
+}
+configHooks.openBinsTab = () => showTab('bins');
+let libraryView = null;
+let binsView = null;
+
 // ---- other tabs (lazy)
 tabInit.library = () => {
   const libViewer = new Viewer($('#lib-viewer'));
-  initLibrary($('#lib-list'), libViewer, catalog, { infoEl: $('#lib-info'), statusEl: $('#lib-status'), emptyEl: $('#lib-empty') });
+  libraryView = initLibrary($('#lib-list'), libViewer, catalog, { infoEl: $('#lib-info'), statusEl: $('#lib-status'), emptyEl: $('#lib-empty') });
   for (const b of document.querySelectorAll('[data-rot]')) b.onclick = () => libViewer.rotateSingle(b.dataset.rot);
   $('#lib-fit').onclick = () => libViewer.fit();
 };
 tabInit.docs = () => renderDocs($('#docs'), catalog);
+tabInit.bins = () => {
+  const binViewer = new Viewer($('#bin-viewer'));
+  binsView = initBins({
+    configEl: $('#bin-config'),
+    libraryEl: $('#bin-library'),
+    viewer: binViewer,
+    statsEl: $('#bin-stats'),
+    dimsEl: $('#bin-dims'),
+    statusEl: $('#bin-status'),
+    getCatalog: () => catalog,
+    onCatalog: setCatalog,
+  });
+  $('#bin-fit').onclick = () => binViewer.fit();
+  window.vault.binViewer = binViewer;
+};

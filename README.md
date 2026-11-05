@@ -3,7 +3,9 @@
 A self-hosted web app for planning VAULT modular storage builds:
 pick a footprint, stack drawers and sustainers, add a roof, base, wheels, backbone, handles and
 pegboards, see the assembled build in 3D (bolts, rods and bearings included, in silver, brass or
-black), and download exactly the STL files (plus a hardware list) you need to print it.
+black), and download exactly the STL files (plus a hardware list) you need to print it. It also
+generates Gridfinity bins sized for VAULT drawers and sustainers, keeps them in a library, and lets
+you lay them out in each drawer.
 
 ![The Build tab: build options, 3D view and parts list](docs/images/build-trolley.png)
 
@@ -292,6 +294,7 @@ archives go to `dist/`.
 | `-warm`     | `false` | Pre-generate every preview in the background at start-up                |
 | `-workers`  | half the CPUs, up to 4 | Concurrent preview generators (each can use a few hundred MB on big files) |
 | `-max-tris` | 150000  | Triangle budget per preview mesh                                        |
+| `-bins`     | `bins`  | Folder for the Gridfinity bin library; `-bins ""` turns saving bins off |
 | `-version`  |         | Print the version and exit                                              |
 
 ## Limitations
@@ -309,5 +312,6 @@ Architecture, design decisions, the API and the notes behind how each part is pl
 ## License
 
 The code in this repository is released under the [MIT License](LICENSE). three.js in `web/vendor/three` is MIT licensed
-(see its `LICENSE`). The VAULT design, its STL files, manuals and images belong to their creator,
+(see its `LICENSE`), and [Manifold](https://github.com/elalish/manifold) in `web/vendor/manifold`,
+used to generate bins, is Apache-2.0 licensed (see its `LICENSE`). The VAULT design, its STL files, manuals and images belong to their creator,
 aren't covered by this repository, and need their own license.

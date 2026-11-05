@@ -50,7 +50,7 @@ func TestMissingDataFolderThenRescan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := New(root, pv, fstest.MapFS{"index.html": {Data: []byte("ok")}})
+	s := New(root, "", pv, fstest.MapFS{"index.html": {Data: []byte("ok")}})
 	h := s.Handler()
 
 	n, data := catalogJSON(t, get(t, h, "/api/catalog").Body.Bytes())

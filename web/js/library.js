@@ -7,11 +7,12 @@ const CATEGORY_LABEL = {
   sustainers: 'Sustainers',
   modifications: 'Modifications',
   pegboard: 'Pegboard',
+  bins: 'Gridfinity bins',
   other: 'Other',
 };
 
 export function initLibrary(listEl, viewer, catalog, { infoEl, statusEl, emptyEl }) {
-  const stls = catalog.parts.filter((p) => p.kind === 'stl');
+  let stls = catalog.parts.filter((p) => p.kind === 'stl');
   let query = '';
   let category = 'all';
   let active = null;
@@ -120,6 +121,13 @@ export function initLibrary(listEl, viewer, catalog, { infoEl, statusEl, emptyEl
   }
 
   renderTree();
+  return {
+    /** The catalog changed (e.g. a bin was saved). */
+    refresh(c) {
+      stls = c.parts.filter((p) => p.kind === 'stl');
+      renderTree();
+    },
+  };
 }
 
 function tags(p) {

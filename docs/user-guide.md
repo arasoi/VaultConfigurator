@@ -12,6 +12,9 @@ the internet.
   - [Parts list and downloads (right panel)](#parts-list-and-downloads-right-panel)
 - [Colours](#colours)
 - [Saving and sharing builds](#saving-and-sharing-builds)
+- [Gridfinity bins](#gridfinity-bins)
+  - [The Bins tab](#the-bins-tab)
+  - [Planning bins in a drawer or sustainer](#planning-bins-in-a-drawer-or-sustainer)
 - [The Parts library tab](#the-parts-library-tab)
 - [The Documentation tab](#the-documentation-tab)
 - [Tips and limits](#tips-and-limits)
@@ -187,6 +190,56 @@ the build and in share links.
 *A different build: an M-width desk tower on feet, with a 4F module holding three drawers
 (2F + 1F + 1F), a 2F sustainer with a gridfinity base, a grid-divider drawer and a table roof, in
 the Arctic preset.*
+
+## Gridfinity bins
+
+VAULT drawers and sustainers take Gridfinity baseplates. The app makes bins that fit them, keeps the
+ones you save in a library on the server, and lets you lay them out in each drawer.
+
+| Space | Cells across | Cells front to back | Tallest bin |
+| --- | --- | --- | --- |
+| S / M / L / XL drawer | 3 / 5 / 6 / 8 | the depth (3–7) | 1F 34.5 mm · 2F 82.5 mm · 4F 178.5 mm |
+| S / M / L / XL sustainer | 3 / 5 / 7 / 9 | the depth (3–7) | 1F 52 mm · 2F 86.5 mm · 4F 182 mm |
+
+L² and XL² drawers count each side as its own drawer (S + S, or S + M).
+
+### The Bins tab
+
+- **Size**: width and depth in grid cells (42 mm each; a bin is 0.5 mm smaller than its cells) and
+  height in 7 mm units. The height list shows each option's real height, and the green badges
+  show which drawers and sustainers it fits.
+- **Features**: stacking lip (adds 4.4 mm), magnet holes (6 × 2 mm magnets) and M3 screw holes in
+  every foot, a 45° label tab along the back of each compartment, and a finger scoop along the
+  front of each compartment.
+- **Compartments**: split the bin into a grid of compartments (at least 10 mm wide each).
+- The 3D view updates as you change settings; it shows the bin's outer size, triangle count and
+  roughly how much filament it would take printed solid.
+- **Save to library** stores the bin (STL plus its settings) on the server, so it's ready to use in
+  any build. **Download STL** saves just the file.
+- **Starter set** adds five common bins (1×1, 1×2, 1×3, 2×2, 2×3, all 4 units with a lip), which fit
+  every 1F drawer.
+- In the **Bin library** list, click a bin to load it back into the generator (to tweak it or rename
+  it), **↓** to download it, or **✕** to delete it.
+
+The library lives in the server's `bins` folder (`-bins` option), separate from your VAULT files.
+Saved bins also appear in the Parts library tab, under *Gridfinity bins*.
+
+### Planning bins in a drawer or sustainer
+
+Give a drawer a *Gridfinity baseplate* interior (or a sustainer a *Gridfinity base*), and a
+**Bins** button appears under it, one per drawer if a tall module holds several. It opens the
+planner:
+
+- The left side lists your library. Bins that are too tall for this space are greyed out.
+- The grid is the drawer seen from above, front at the bottom. Click a cell to drop the selected bin
+  with its front-left corner there; a green outline shows where it will go, red if it doesn't fit.
+- **Turn 90°** (or the `R` key) rotates the bin. **Fill empty cells** fills every gap with the
+  selected bin. Click a placed bin to remove it.
+
+Placed bins are drawn in the 3D view (they move with the drawer when you open it), have their own
+colour group, and are added to the parts list under *Gridfinity bins* and to the ZIP. If a planned
+bin later doesn't fit (for example after changing the depth) or was deleted from the library, it's
+left out with a warning, and comes back when it fits again.
 
 ## The Parts library tab
 

@@ -3,3 +3,4 @@ cache/
 .claude/
 vault-configurator
 *.zip
+bins/

@@ -50,7 +50,7 @@ func testServerAt(t *testing.T) (*Server, *catalog.Catalog, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := New(root, pv, fstest.MapFS{"index.html": {Data: []byte("ok")}})
+	s := New(root, filepath.Join(t.TempDir(), "bins"), pv, fstest.MapFS{"index.html": {Data: []byte("ok")}})
 	return s, s.Catalog(), root
 }
 
