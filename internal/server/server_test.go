@@ -29,6 +29,13 @@ func tinySTL() []byte {
 
 func testServer(t *testing.T) (*Server, *catalog.Catalog) {
 	t.Helper()
+	s, cat, _ := testServerAt(t)
+	return s, cat
+}
+
+// testServerAt also returns the data folder, for tests that break it.
+func testServerAt(t *testing.T) (*Server, *catalog.Catalog, string) {
+	t.Helper()
 	root := t.TempDir()
 	for _, rel := range []string{"VAULT/01. DRAWERS/07. Universal/Springs.stl", "VAULT/01. DRAWERS/07. Universal/Latch.stl"} {
 		p := filepath.Join(root, filepath.FromSlash(rel))
@@ -39,15 +46,12 @@ func testServer(t *testing.T) (*Server, *catalog.Catalog) {
 			t.Fatal(err)
 		}
 	}
-	cat, err := catalog.Scan(root)
+	pv, err := NewPreviews(t.TempDir(), 1000, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pv, err := NewPreviews(cat, t.TempDir(), 1000, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &Server{Cat: cat, Previews: pv, Web: fstest.MapFS{"index.html": {Data: []byte("ok")}}}, cat
+	s := New(root, pv, fstest.MapFS{"index.html": {Data: []byte("ok")}})
+	return s, s.Catalog(), root
 }
 
 func idOf(cat *catalog.Catalog, name string) string {
@@ -93,14 +97,9 @@ func TestZipColorFolders(t *testing.T) {
 	}
 }
 
-func TestZipRejectsUnknownAndStaticRevalidates(t *testing.T) {
+func TestStaticRevalidates(t *testing.T) {
 	s, _ := testServer(t)
 	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/zip?items=nope~Orange", nil))
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("unknown id: status %d", rec.Code)
-	}
-	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/index.html", nil))
 	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
 		t.Errorf("static Cache-Control = %q", got)

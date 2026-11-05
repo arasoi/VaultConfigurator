@@ -6,6 +6,7 @@ package catalog
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"io/fs"
 	"os"
 	"path"
@@ -44,7 +45,13 @@ type Catalog struct {
 	Root    string           `json:"-"`
 	Parts   []*Part          `json:"parts"`
 	Scanned time.Time        `json:"scanned"`
+	Skipped []string         `json:"skipped,omitempty"` // entries that couldn't be read (permissions, broken links)
 	byID    map[string]*Part `json:"-"`
+}
+
+// Empty returns a catalog without parts (used when the data folder is missing).
+func Empty(root string) *Catalog {
+	return &Catalog{Root: root, Parts: []*Part{}, Scanned: time.Now(), byID: map[string]*Part{}}
 }
 
 // Get looks up a part by ID.
@@ -71,14 +78,22 @@ func Scan(root string) (*Catalog, error) {
 	if real, err := filepath.EvalSymlinks(root); err == nil {
 		root = real
 	}
-	c := &Catalog{Root: root, Scanned: time.Now(), byID: map[string]*Part{}}
+	c := Empty(root)
 	// Walk through os.DirFS so the data folder itself may be a symlink or a
 	// Windows junction (e.g. to a NAS or another drive): DirFS opens the root by
 	// following it, where filepath.WalkDir would treat a linked root as a file.
 	// Links inside the folder are still not followed.
 	err = fs.WalkDir(os.DirFS(root), ".", func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return err
+			if rel == "." {
+				return err // the data folder itself can't be read
+			}
+			// One unreadable folder or file shouldn't hide the rest.
+			c.Skipped = append(c.Skipped, rel+": "+errReason(err))
+			if d != nil && d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
 		}
 		if strings.HasPrefix(d.Name(), ".") {
 			if d.IsDir() && rel != "." {
@@ -95,7 +110,8 @@ func Scan(root string) (*Catalog, error) {
 		}
 		info, err := d.Info()
 		if err != nil {
-			return err
+			c.Skipped = append(c.Skipped, rel+": "+errReason(err))
+			return nil
 		}
 		part := Classify(rel)
 		part.Kind = kind
@@ -110,6 +126,15 @@ func Scan(root string) (*Catalog, error) {
 	}
 	sort.Slice(c.Parts, func(i, j int) bool { return c.Parts[i].Path < c.Parts[j].Path })
 	return c, nil
+}
+
+// errReason is the short reason of a file system error, without the path.
+func errReason(err error) string {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return pe.Err.Error()
+	}
+	return err.Error()
 }
 
 // MakeID derives a short stable ID from a relative path.

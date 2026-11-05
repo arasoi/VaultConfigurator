@@ -96,7 +96,10 @@ Data/  ──scan──▶  catalog (tags parsed from file names)  ──▶  /a
 1. **Catalog** (`internal/catalog`): every file under `-data` is classified from its path, e.g.
    `01. DRAWERS/01. S Families/S5/Modules/S5 Module 2F.stl` becomes
    `{category: drawers, group: Modules, sizes: [S], depth: 5, heights: [2]}`. Shared parts like
-   `S-M 2-4F Hinge` get several sizes/heights. Adding files to the data folder needs only a restart.
+   `S-M 2-4F Hinge` get several sizes/heights. Adding files to the data folder needs a restart or a
+   rescan (`POST /api/rescan`, the setup screen's button). Folders that can't be read are skipped
+   and logged rather than failing the scan, and a missing data folder starts the site with an empty
+   catalog whose `data` status explains what's wrong.
 2. **Previews** (`internal/mesh`): the original STLs are far too big for a browser, and they come
    from one big CAD scene, so they're scattered and often rotated (e.g. roofs at 45°). On first
    request each file is simplified to ≤150k triangles, rotated so its tightest bounding box is
@@ -114,13 +117,33 @@ Data/  ──scan──▶  catalog (tags parsed from file names)  ──▶  /a
    Previews are served with an ETag from the cache key, which includes `algoVersion` in
    `previews.go`, so bumping it reaches browsers immediately. The viewer shades with smooth
    normals that keep edges sharper than 35°.
+
+   Every preview is generated at two **levels of detail** in one pass: `full` (≤ `-max-tris`, for
+   the Parts library) and `build` (`?lod=build`, for assembled builds). In a build all parts are
+   seen at the same zoom, so the build budget scales with the part's surface, i.e. its bounding
+   box diagonal squared: full budget from 500 mm, at least 8 000 triangles (a 40 mm knob drops from
+   122 k to 8 k triangles; a typical build from ~10 M to ~3 M). The build level is simplified from
+   the source STL and moved into the full level's frame (`Orientation.Apply`); decimating the
+   already decimated preview again stalled and distorted thin parts (a facade lost 3 mm of width).
+
+   Failures: the STL reader streams the file and tolerates common exporter quirks (binary files
+   whose header starts with "solid", a wrong triangle count, trailing bytes, NaN vertices). A
+   source file deleted since the scan answers 404, an unreadable one 422 with the reason (and is
+   not retried until the file changes); a panic while processing a mesh is recovered. Cached
+   previews that no current part uses (older `algoVersion`, changed files) are deleted after each
+   scan.
 3. **Rules** (`web/js/rules.js`): the VAULT system knowledge lives here — sizes (S 164.8, M 254,
    L 329.6 = S+S, XL 418.8 = S+M mm), depths (42 mm gridfinity units), heights (1F/2F/4F on a 48 mm
    pitch), which files make up each drawer/sustainer, roofs, bases, backbone, handles, and the
    hardware list from the manual. `resolve()` turns a build into a print list + 3D placements;
    `layout()` positions them.
 4. **Viewer** (`web/js/viewer.js`): loads previews, matches each mesh's axes to its role's expected
-   width/height/depth, and stacks everything. Click a part to see its file and quantity.
+   width/height/depth, and stacks everything. Click a part to see its file and quantity. It only
+   redraws when something changed (camera, layout, colours, size), not every frame. A part whose
+   preview can't be loaded, or that has no file at all, stays as a red box at its nominal size;
+   the part card shows the reason, the status bar counts failures and offers a retry, and
+   `resolve()` warns about any placement without a file so it can't silently drop out of the print
+   list.
 
 ## Project layout
 
@@ -153,10 +176,15 @@ tools/release/              cross-compiles and packages every platform for a rel
 
 | Endpoint                                   | Returns                                                 |
 | ------------------------------------------ | ------------------------------------------------------- |
-| `GET /api/catalog`                         | All files with tags                                     |
-| `GET /api/preview/{id}`                    | Simplified, oriented mesh (gzip `VMS1`)                 |
+| `GET /api/catalog`                         | All files with tags, plus `data`: the data folder's path, whether it was found, and why not |
+| `POST /api/rescan`                         | Reads the data folder again; returns the new catalog    |
+| `GET /api/preview/{id}[?lod=build]`        | Simplified, oriented mesh (gzip `VMS1`); 404 if the file is gone, 422 if it isn't a usable STL (plain-text reason) |
 | `GET /api/file/{id}[?download]`            | Original file                                           |
-| `GET /api/zip?name=x&items=id,id*3~Orange,…` | ZIP of originals; `*3` adds “(print x3)”, `~Orange` puts it in an `Orange/` folder |
+| `GET /api/zip?name=x&items=id,id*3~Orange,…` | ZIP of originals; `*3` adds “(print x3)”, `~Orange` puts it in an `Orange/` folder; missing or unknown parts are left out and listed in `MISSING FILES.txt` |
+
+The front end and catalog are gzipped for clients that accept it, and the embedded front-end
+files carry content-hash ETags (they have no modification time), so a reload revalidates them with
+304s instead of downloading ~900 KB again.
 
 ## Colours
 

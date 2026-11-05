@@ -16,7 +16,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"time"
 
 	"vaultconfigurator/internal/catalog"
 	"vaultconfigurator/internal/server"
@@ -51,22 +50,9 @@ func main() {
 		useExecutableDir(*data)
 	}
 
-	if !catalog.Exists(*data) {
-		log.Fatalf("data folder %q not found (use -data)", *data)
-	}
-	t := time.Now()
-	cat, err := catalog.Scan(*data)
+	pv, err := server.NewPreviews(*cache, *maxTris, *workers)
 	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("catalog: %d files from %s in %v", len(cat.Parts), cat.Root, time.Since(t).Round(time.Millisecond))
-
-	pv, err := server.NewPreviews(cat, *cache, *maxTris, *workers)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if *warm {
-		pv.Warm()
+		log.Fatalf("preview cache %q: %v (use -cache)", *cache, err)
 	}
 
 	var web fs.FS
@@ -76,9 +62,19 @@ func main() {
 		web, _ = fs.Sub(embedded, "web")
 	}
 
-	s := &server.Server{Cat: cat, Previews: pv, Web: web}
+	// A missing data folder isn't fatal: the site explains how to set it up
+	// and picks the files up with a rescan.
+	s := server.New(*data, pv, web)
+	if st := s.Status(); st.Error != "" {
+		log.Printf("no VAULT files yet (%s: %s); the site will show setup instructions", st.Dir, st.Error)
+	}
+	if *warm {
+		pv.Warm(s.Catalog())
+	}
 	log.Printf("listening on http://localhost%s", *addr)
-	log.Fatal(http.ListenAndServe(*addr, s.Handler()))
+	if err := http.ListenAndServe(*addr, s.Handler()); err != nil {
+		log.Fatalf("can't serve on %s: %v (is another copy already running? pick a port with -addr)", *addr, err)
+	}
 }
 
 // useExecutableDir switches to the folder holding the executable when the

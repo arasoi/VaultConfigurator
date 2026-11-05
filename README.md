@@ -104,6 +104,11 @@ Data/
 
 Files the app doesn't recognise still appear in the **Parts library** tab, under *Other*.
 
+If the data folder is missing or empty, the app still starts and shows where it is looking, with a
+**Rescan data folder** button for once the files are in place. A file that is missing or can't be
+read shows as a red box in the 3D view (click it to see why), the parts list warns about it, and a
+ZIP download leaves it out and lists it in `MISSING FILES.txt`.
+
 ## Installing and running
 
 The app is a single program with the website built in. Download a ready-made build for your

@@ -23,6 +23,6 @@ export function renderDocs(root, catalog) {
     h('div.doc-grid', manuals.map(card)),
     h('h2', 'Reference images'),
     h('div.doc-grid', images.map(card)),
-    texts.length ? [h('h2', 'Notes'), h('div.doc-grid', texts.map(card))] : null,
+    ...(texts.length ? [h('h2', 'Notes'), h('div.doc-grid', texts.map(card))] : []),
   );
 }

@@ -266,7 +266,13 @@ export function resolve(build, parts) {
     else out.bomMap.set(part.id, { part, qty, section, note: note || undefined, group, aid: !!aid });
   };
   const addHw = (name, qty) => out.hardware.set(name, (out.hardware.get(name) || 0) + qty);
-  const missing = (what) => out.warnings.push(`No file found for ${what}.`);
+  // role: the kind of placement left without a file (see 'parts without a file' below).
+  const coveredRoles = new Set();
+  const missing = (what, role) => {
+    const msg = `No file found for ${what}.`;
+    if (!out.warnings.includes(msg)) out.warnings.push(msg); // once, not per drawer
+    if (role) coveredRoles.add(role);
+  };
   const levels = build.levels || [];
   // Stable ids for placements (used for per-part colors), built from the
   // level id / column / parent so they survive unrelated edits to the build.
@@ -345,7 +351,7 @@ export function resolve(build, parts) {
         variant = 'grid';
       }
       const roof = parts.find({ category: 'drawers', group: 'Roofs', size: rs, depth: d, variant });
-      if (!roof) missing(`${rs}${d} ${variant} roof`);
+      if (!roof) missing(`${rs}${d} ${variant} roof`, 'roof');
       addBom(roof, 1, 'Roof');
       const rp = place({ partId: roof?.id, role: 'roof', slot: { level: levels.length - 1, col: ci, x: cx, width: w }, expect: [w, null, D], iface: ifaceFor(parts, rs, d) });
       // Only roofs with a handle mount take a handle: the Grid roofs (two M6
@@ -381,7 +387,7 @@ export function resolve(build, parts) {
   // ---- base
   if (build.base !== 'none') {
     const b = parts.wholeOrParts({ category: 'modifications', group: 'Base', size: W, depth: d }, build.splitPrints);
-    if (!b.files.length) missing(`${W}${d} base`);
+    if (!b.files.length) missing(`${W}${d} base`, 'base');
     b.files.forEach((f) => addBom(f, 1, 'Base & mobility'));
     const basePl = place({ partId: b.show?.id, role: 'base', files: b.files.map((f) => f.id), expect: [WIDTH[W], 52.2, D + 10], iface: ifaceFor(parts, W, d) });
     if (b.split) {
@@ -493,7 +499,7 @@ export function resolve(build, parts) {
       // One narrow lock per side, outer edge flush with the module; the file is
       // the right-hand one (knob inboard of the rod), turned over for the left.
       const lock = parts.find({ category: 'modifications', name: /^Universal Pull-out Handle Lock/ });
-      if (!lock) missing('universal pull-out handle lock');
+      if (!lock) missing('universal pull-out handle lock', 'handlelock');
       let first = null;
       for (const side of [-1, 1]) {
         addBom(lock, 1, 'Backbone & handles');
@@ -513,7 +519,7 @@ export function resolve(build, parts) {
       return first;
     }
     const lock = parts.find({ category: 'modifications', group: 'Backbone', size: W, name: /Pull-out Handle Lock$/ });
-    if (!lock) missing(`${W} pull-out handle lock`);
+    if (!lock) missing(`${W} pull-out handle lock`, 'handlelock');
     addBom(lock, 1, 'Backbone & handles');
     addHw('M4 60–100mm bolt', 4);
     const lp = place({ partId: lock?.id, placeholder: !lock, role: 'handlelock', slot: { level: li }, bx: 0, expect: [WIDTH[W], 47, 35] });
@@ -536,7 +542,7 @@ export function resolve(build, parts) {
       const lockHere = build.pullHandle && li === levels.length - 1;
       for (const h of splitHeight(lockHere ? lv.height - 1 : lv.height, bbAvail)) {
         const bb = bbParts(h);
-        if (!bb) missing(`${universal ? 'universal' : W}${h}F backbone`);
+        if (!bb) missing(`${universal ? 'universal' : W}${h}F backbone`, 'backbone');
         for (const bx of bbCols) {
           addBom(bb, 1, 'Backbone & handles');
           addHw('M4 60–100mm bolt', 4);
@@ -567,7 +573,7 @@ export function resolve(build, parts) {
         const pAvail = parts.findAll({ category: 'modifications', group: 'Pegboard Attachment', size: W, path: folder }).flatMap((p) => p.heights || []);
         for (const h of splitHeight(lv.height, pAvail)) {
           const pg = parts.find({ category: 'modifications', group: 'Pegboard Attachment', size: W, height: h, path: folder });
-          if (!pg) missing(`${W}${h}F pegboard attachment`);
+          if (!pg) missing(`${W}${h}F pegboard attachment`, 'pegboard');
           addBom(pg, 1, 'Pegboard');
           addHw('M4 40mm bolt', 4);
           const pgp = place({ partId: pg?.id, role: 'pegboard', slot: { level: li }, expect: [null, null, FIT.pegboardT] });
@@ -586,7 +592,7 @@ export function resolve(build, parts) {
       const second = parts.find({ category: 'modifications', name: /^Wall Mount Second Part/ });
       for (const h of splitHeight(lv.height, avail)) {
         const wm = parts.find({ category: 'modifications', group: 'Wall Mounts', size: W, height: h });
-        if (!wm) missing(`${W}${h}F wall mount`);
+        if (!wm) missing(`${W}${h}F wall mount`, 'wallmount');
         addBom(wm, 1, 'Mounting');
         addBom(second, 1, 'Mounting', 'screwed to the wall');
         const wp = place({ partId: wm?.id, role: 'wallmount', slot: { level: li }, expect: [WIDTH[W], 48 * h + 7.1, FIT.wallMountT] });
@@ -642,6 +648,21 @@ export function resolve(build, parts) {
     if (!part || !(a.qty > 0)) continue;
     addBom(part, a.qty, part.category === 'pegboard' ? 'Pegboard accessories' : 'Extras', accessoryLabel(part));
     for (let i = 0; i < Math.min(a.qty, 50); i++) place({ partId: part.id, role: 'accessory', expect: [null, null, null] });
+  }
+
+  // ---- parts without a file
+  // Anything placed without a file can't be drawn or printed. Some lookups
+  // above report it themselves; this catches every other one, so a gap in the
+  // data folder never silently drops a part from the print list.
+  const unfilled = new Map();
+  for (const pl of out.placements) {
+    if (pl.partId || pl.hw || pl.files?.length || coveredRoles.has(pl.role)) continue;
+    if (pl.role === 'rod') continue; // purchased M16 rod, drawn as a cylinder
+    unfilled.set(pl.role, (unfilled.get(pl.role) || 0) + 1);
+  }
+  if (unfilled.size) {
+    const list = [...unfilled].map(([r, n]) => `${ROLE_NAME[r] || r}${n > 1 ? ` ×${n}` : ''}`).join(', ');
+    out.warnings.push(`Not found in the data folder, so missing from the 3D view and the print list: ${list}. Check those files are there under their original names, then reload.`);
   }
 
   // ---- final shape
@@ -902,7 +923,7 @@ export function boxSplits(F, heights = [1, 2, 4]) {
 function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, addHw, place, hw, missing, state }) {
   const w = WIDTH[size];
   const module = parts.find({ category: 'drawers', group: 'Modules', size, depth: d, height: F });
-  if (!module) missing(`${SIZE_LABEL[size]}${d} ${F}F drawer module`);
+  if (!module) missing(`${SIZE_LABEL[size]}${d} ${F}F drawer module`, 'module');
   addBom(module, 1, 'Drawers');
   const mp = place({ partId: module?.id, role: 'module', slot, expect: [w, drawerH(F), D], iface: ifaceFor(parts, size, d) });
 
@@ -957,7 +978,7 @@ function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, add
     // ---- Each box in the stack, with everything that rides on it.
     for (const { lvl, h } of stack) {
       const box = parts.wholeOrParts({ category: 'drawers', group: 'Boxes', size: bs, depth: d, height: h, variant: '' }, build.splitPrints);
-      if (!box.files.length) missing(`${bs}${d} ${h}F box`);
+      if (!box.files.length) missing(`${bs}${d} ${h}F box`, 'box');
       box.files.forEach((f) => addBom(f, 1, 'Drawers'));
       const boxFiles = box.files.map((f) => f.id);
       if (xl) {
@@ -969,14 +990,14 @@ function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, add
 
       // Facade with its handle, screw caps and label.
       const facade = parts.find({ category: 'drawers', group: 'Facades', size: bs, height: h });
-      if (!facade) missing(`${bs}${h}F drawer facade`);
+      if (!facade) missing(`${bs}${h}F drawer facade`, 'facade');
       addBom(facade, 1, 'Drawers');
       const fl = drawerFacadeLayout(bs, h);
       const fp = place({ partId: facade?.id, role: 'facade', lvl, h, slot: { ...slot, x: bcx, width: bw }, expect: [bw, fl.H, FIT.facadeT] });
       addHw('M4 14mm bolt', fl.holes.length);
       if (facade) for (const c of fl.holes) hw(fp, bolt(4, 14), [c.x, c.y, FACADE_BOLT_SEAT], [0, 0, -1], 'local');
 
-      if (!keyPart) missing('drawer key / handle');
+      if (!keyPart) missing('drawer key / handle', 'key');
       addBom(keyPart, 1, 'Drawers', build.handle === 'hidden' ? 'hidden key handle' : 'handle');
       if (build.handle === 'hidden') {
         // Flush dial. The removable key (part 2) is one per build, drawn in the
@@ -1005,7 +1026,7 @@ function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, add
           gp = parts.wholeOrParts({ category: 'drawers', group: 'Baseplates', size: bs, depth: d, variant: '' });
         }
         gp.files.forEach((f) => addBom(f, 1, 'Drawers', null, 'inserts'));
-        if (!gp.files.length) missing(`${bs}${d} gridfinity baseplate`);
+        if (!gp.files.length) missing(`${bs}${d} gridfinity baseplate`, 'gridplate');
         place({
           partId: gp.show?.id || gp.files[0]?.id,
           files: gp.files.map((f) => f.id),
@@ -1034,8 +1055,8 @@ function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, add
         const dN = { 3: 10, 4: 14, 5: 18, 6: 22, 7: 26 }[d];
         const wp = piece(wN);
         const dp = piece(dN);
-        if (across && !wp) missing(`grid divider ${wN} (${hLabel})`);
-        if (along && !dp) missing(`grid divider ${dN} (${hLabel})`);
+        if (across && !wp) missing(`grid divider ${wN} (${hLabel})`, 'divider');
+        if (along && !dp) missing(`grid divider ${dN} (${hLabel})`, 'divider');
         // With across dividers present, each front-back line is split into
         // segments between them, using the generic piece for the open holes
         // (instructions option 1: no border, tiny gap at the wall).
@@ -1142,7 +1163,7 @@ function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, add
       // Every box gets them (they're what lock a box when several share a
       // module); each rack is drawn on its own.
       const rails = parts.find({ category: 'drawers', group: 'Universal', size: bs, name: /Rails$/ });
-      if (!rails) missing(`${bs} geared rails`);
+      if (!rails) missing(`${bs} geared rails`, 'grail');
       addBom(rails, 1, 'Drawers', 'pair of geared racks (upper + lower)');
       const len = { S: 121.1, M: 165.7, L: 203.5, XL: 248.5 }[bs];
       const shift = Math.max(0, (boxW - len) / 2);
@@ -1184,13 +1205,13 @@ function resolveSustainer({ size, F, d, D, col, slot, build, parts, addBom, addH
   if (interior === 'sealed' && !big) interior = 'flat';
   const variant = big ? (interior === 'dividers' ? 'dividers' : interior === 'sealed' ? 'sealed' : 'flat') : '';
   const module = parts.find({ category: 'sustainers', group: 'Modules', size, depth: d, height: F, variant });
-  if (!module) missing(`${SIZE_LABEL[size]}${d} ${F}F sustainer module`);
+  if (!module) missing(`${SIZE_LABEL[size]}${d} ${F}F sustainer module`, 'smodule');
   addBom(module, 1, 'Sustainers');
   const bodyH = variant === 'sealed' ? null : SUSTAINER_H[F];
   const mp = place({ partId: module?.id, role: 'smodule', slot, expect: [w, bodyH, D], iface: ifaceFor(parts, size, d) });
 
   const lid = parts.wholeOrParts({ category: 'sustainers', group: 'Roofs', size, depth: d, variant: '' }, build.splitPrints);
-  if (!lid.files.length) missing(`${size}${d} sustainer lid`);
+  if (!lid.files.length) missing(`${size}${d} sustainer lid`, 'lid');
   lid.files.forEach((f) => addBom(f, 1, 'Sustainers'));
   if (lid.split) addBom(parts.find({ category: 'sustainers', group: 'Roofs', size, depth: d, variant: 'roof-connector' }), 1, 'Sustainers');
   const lidFiles = lid.files.map((f) => f.id);
@@ -1203,7 +1224,7 @@ function resolveSustainer({ size, F, d, D, col, slot, build, parts, addBom, addH
   const facade =
     parts.find({ category: 'sustainers', group: 'Facades', size, height: F, path: /Families/ }) ||
     parts.find({ category: 'sustainers', group: 'Facades', size, height: F });
-  if (!facade) missing(`${size}${F}F sustainer facade`);
+  if (!facade) missing(`${size}${F}F sustainer facade`, 'sfacade');
   addBom(facade, 1, 'Sustainers');
   const fp = place({ partId: facade?.id, role: 'sfacade', slot, expect: [w, null, FIT.facadeT] });
 
@@ -1223,8 +1244,8 @@ function resolveSustainer({ size, F, d, D, col, slot, build, parts, addBom, addH
   const hinge = sm ? uni(F === 1 ? /^S-M 1F Hinge/ : /^S-M 2-4F Hinge/) : uni(F === 1 || size === 'XL' ? /^L-XL 1F Hinge/ : /^L 2-4F Hinge/);
   const hingeTop = uni(size === 'S' ? /^S Hinge Top/ : size === 'M' ? /^M Hinge Top/ : /^L-XL Hinge Top/);
   const rods = uni(sm ? /^S-M Rods/ : /^L-XL Rods/);
-  if (!hinge) missing(`${size} ${F}F hinge`);
-  if (!hingeTop) missing(`${size} hinge top`);
+  if (!hinge) missing(`${size} ${F}F hinge`, 'hinge');
+  if (!hingeTop) missing(`${size} hinge top`, 'hingetop');
   addBom(hinge, 1, 'Sustainers', 'both hinge leaves (module side)');
   addBom(hingeTop, 1, 'Sustainers', sm ? 'hinge plate (lid side)' : 'both hinge plates (lid side)');
   addBom(rods, 1, 'Sustainers', 'both hinge pins');
@@ -1360,7 +1381,7 @@ function resolveSustainer({ size, F, d, D, col, slot, build, parts, addBom, addH
   if (interior === 'gridfinity') {
     const gp = parts.wholeOrParts({ category: 'sustainers', group: 'Baseplates', size, depth: d });
     gp.files.forEach((f) => addBom(f, 1, 'Sustainers', null, 'inserts'));
-    if (!gp.files.length) missing(`${size}${d} sustainer baseplate`);
+    if (!gp.files.length) missing(`${size}${d} sustainer baseplate`, 'sbaseplate');
     place({ partId: gp.show?.id || gp.files[0]?.id, files: gp.files.map((f) => f.id), role: 'sbaseplate', attach: { to: mp.key, yRef: 'bottom', y: 3, yAlign: 'above' }, expect: [innerW - 4, null, innerD - 4] });
   } else if (interior === 'dividers' || interior === 'sealed') {
     const across = clampInt(col.across ?? (big ? 1 : 2), 0, 8);
@@ -1678,6 +1699,39 @@ function nominal(pl, build) {
 }
 
 // ---------------------------------------------------------------- appearance
+
+/** Readable names of placement roles (for warnings). */
+export const ROLE_NAME = {
+  module: 'drawer module',
+  smodule: 'sustainer module',
+  lid: 'sustainer lid',
+  sfacade: 'sustainer facade',
+  box: 'drawer box',
+  foot: 'foot',
+  wheelcover: 'wheel cover',
+  tophandle: 'top handle',
+  pullhandle: 'pull-out handle',
+  stathandle: 'stationary handle',
+  handlelock: 'handle lock',
+  key: 'drawer knob',
+  keycap: 'key cap',
+  fcap: 'screw cap',
+  hingetop: 'hinge top',
+  lockholder: 'latch holder',
+  lockinner: 'latch link',
+  lockouter: 'latch lever',
+  spring: 'springs',
+  grail: 'geared rail',
+  dlatch: 'drawer latch',
+  stopper: 'runner stopper',
+  guide: 'runner guide',
+  slide: 'runner slide',
+  gridplate: 'gridfinity baseplate',
+  sbaseplate: 'sustainer baseplate',
+  divider: 'divider',
+  l2acc: 'L² accessory',
+  wallmount: 'wall mount',
+};
 
 export const COLORS = {
   module: 0xdcdedf,

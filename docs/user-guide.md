@@ -215,6 +215,10 @@ print settings and hardware.
 - **The 3D view is a guide, not CAD.** Parts are placed from the manuals and from measurements of
   the files, so small internal parts (springs, pins, runners) can be a few mm off. The parts list
   is what matters for printing.
+- **Missing or damaged files** show as red boxes in the 3D view; click one to see why (file
+  missing, not a valid STL, or the server couldn't be reached). The status bar above the view
+  counts them and has a **Retry** button, and the parts list warns about parts with no file at
+  all. ZIP downloads still work: they leave such files out and list them in `MISSING FILES.txt`.
 - **Keep the data folder as it is.** The app recognises files by their original folder and file
   names, and it never changes them. If you rename or move files, they will be missed or listed
   under *Other*.

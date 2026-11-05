@@ -1,12 +1,12 @@
 // App entry: wires tabs, build state, viewer, and panels together.
-import { loadCatalog } from './api.js';
+import { loadCatalog, rescanCatalog } from './api.js';
 import { markBomRow, renderBom } from './bom.js';
 import { placementColor, filamentName, groupOfRole, COLOR_GROUPS } from './colors.js';
 import { loadInitialBuild, paletteRow, renderConfig, sanitize, saveBuild, shareUrl, swatchInput } from './configurator.js';
 import { renderDocs } from './docs.js';
 import { h } from './dom.js';
 import { initLibrary } from './library.js';
-import { Parts, resolve } from './rules.js';
+import { Parts, ROLE_NAME, resolve } from './rules.js';
 import { Viewer } from './viewer.js';
 
 const $ = (s) => document.querySelector(s);
@@ -45,12 +45,68 @@ function showTab(name) {
 }
 
 // ---- boot
+const SETUP_DOCS = 'https://github.com/arasoi/VaultConfigurator#data-files-not-included';
+
+/** Replaces the Build tab with a message (and an action) when there's nothing to configure. */
+function showBlocker(title, body, action) {
+  const card = h('div.setup', h('h2', title), body, action ? h('div.btn-row', action) : null);
+  $('#config').replaceChildren(h('p.muted', 'Nothing to configure yet.'));
+  $('#bom').replaceChildren();
+  $('#tab-build .viewer-toolbar').hidden = true;
+  $('#tab-build .stage').append(card);
+  return card;
+}
+
+/** No VAULT files: explain where they go and offer a rescan. */
+function showSetup(data) {
+  const note = h('p.muted');
+  const btn = h('button.btn.primary', {
+    onclick: async () => {
+      btn.disabled = true;
+      note.textContent = 'Scanning…';
+      try {
+        const c = await rescanCatalog();
+        if (c.parts.some((p) => p.kind === 'stl')) return location.reload();
+        note.textContent = `Still no STL files${c.data?.error ? `: ${c.data.error}` : ''}.`;
+      } catch (e) {
+        note.textContent = `Rescan failed: ${e.message}`;
+      }
+      btn.disabled = false;
+    },
+  }, 'Rescan data folder');
+  showBlocker(
+    'VAULT files not found',
+    [
+      h('p', 'Looking in ', h('code', data?.dir || 'Data'), data?.error ? ` — ${data.error}.` : '.'),
+      h(
+        'p',
+        "This app doesn't include the VAULT files. Copy your own licensed set there, keeping the original folder and file names (",
+        h('code', 'VAULT_USSA/01. DRAWERS/…'),
+        '), or restart the app with ',
+        h('code', '-data /path/to/your/files'),
+        '.',
+      ),
+      h('p', h('a', { href: SETUP_DOCS, target: '_blank', rel: 'noopener' }, 'Expected folder layout'), ' — the app reads the folder when it starts or when you rescan.'),
+      note,
+    ],
+    btn,
+  );
+}
+
 let catalog;
 try {
   catalog = await loadCatalog();
 } catch (e) {
-  $('#config').replaceChildren(h('p', `Could not load the parts catalog: ${e.message}`));
+  showBlocker(
+    "Can't reach the server",
+    h('p', `The parts catalog didn't load (${e.message}). Check that the configurator is still running, then try again.`),
+    h('button.btn.primary', { onclick: () => location.reload() }, 'Try again'),
+  );
   throw e;
+}
+if (!catalog.parts.some((p) => p.kind === 'stl')) {
+  showSetup(catalog.data);
+  await new Promise(() => {}); // nothing to build: stop here (the rescan reloads the page)
 }
 const parts = new Parts(catalog);
 
@@ -61,11 +117,21 @@ if (location.hash.startsWith('#b=')) history.replaceState(null, '', location.pat
 const statusEl = $('#status');
 const pickEl = $('#pick');
 const viewer = new Viewer($('#viewer'), {
+  lod: 'build',
   onPick: (pl) => showPick(pl),
   colorOf: (pl) => placementColor(build, pl),
-  onStatus: ({ total, done }) => {
-    statusEl.hidden = done >= total;
-    statusEl.textContent = `Loading parts ${done} / ${total}… (first view of large files can take a few seconds)`;
+  onStatus: ({ total, done, failed }) => {
+    const loading = done < total;
+    const n = failed.length;
+    statusEl.hidden = !loading && !n;
+    statusEl.classList.toggle('warn', n > 0);
+    const failNote = n ? `${n} part${n === 1 ? '' : 's'} couldn't load (red)` : '';
+    statusEl.title = n ? 'Click a red part to see why' : '';
+    if (loading) {
+      statusEl.textContent = `Loading parts ${done} / ${total}…${n ? ` · ${failNote}` : ' (first view of large files can take a few seconds)'}`;
+    } else if (n) {
+      statusEl.replaceChildren(`⚠ ${failNote} · `, h('button.link', { type: 'button', onclick: () => viewer.retryFailed() }, 'Retry'));
+    }
   },
   onLayout: (L) => {
     $('#dims').replaceChildren(
@@ -127,9 +193,11 @@ let picked = null; // cid of the part shown in the card
 let pickScope = 'part'; // 'part' = this copy only, 'file' = every copy of the file
 
 const ROLE_LABEL = { backbone: 'Backbone board' };
+const capitalize = (t) => t.charAt(0).toUpperCase() + t.slice(1);
 
 function showPick(pl) {
-  if (!pl || pl.fixedColor || (!pl.partId && !pl.files?.length)) {
+  const failure = pl ? viewer.failure(pl.key) : '';
+  if (!pl || pl.fixedColor || (!pl.partId && !pl.files?.length && !failure)) {
     picked = null;
     pickEl.hidden = true;
     markBomRow($('#bom'), null);
@@ -159,9 +227,17 @@ function showPick(pl) {
     });
 
   pickEl.hidden = false;
-  pickEl.replaceChildren(
-    h('h4', p ? p.name : ROLE_LABEL[pl.role] || pl.role),
+  // filter: the native replaceChildren would print null items as "null".
+  const card = [
+    h('h4', p ? p.name : ROLE_LABEL[pl.role] || capitalize(ROLE_NAME[pl.role] || pl.role)),
     p ? h('div.path', p.path) : null,
+    failure
+      ? h(
+          'div.pick-error',
+          `Not drawn: ${failure}.`,
+          pl.partId ? [' ', h('button.link', { type: 'button', onclick: () => viewer.retryFailed() }, 'Retry')] : null,
+        )
+      : null,
     entry ? h('div', `Print ×${entry.qty} for this build`) : null,
     h(
       'div.pick-color',
@@ -192,7 +268,7 @@ function showPick(pl) {
     h(
       'div.btn-row',
       { style: { marginTop: '8px' } },
-      p ? h('a.btn.sm', { href: `/api/file/${p.id}?download` }, 'Download STL') : null,
+      p && !failure ? h('a.btn.sm', { href: `/api/file/${p.id}?download` }, 'Download STL') : null,
       h(
         'button.btn.sm.ghost',
         {
@@ -204,7 +280,8 @@ function showPick(pl) {
         'Close',
       ),
     ),
-  );
+  ];
+  pickEl.replaceChildren(...card.filter(Boolean));
   markBomRow($('#bom'), p?.id || null);
 }
 
@@ -213,10 +290,10 @@ function orientedBy(pl) {
   return viewer.objects.get(pl.key)?.mesh.geometry.userData.orientedBy || '';
 }
 
-function toast(msg) {
+function toast(msg, ms = 1800) {
   const t = h('div.viewer-status', { style: { top: 'auto', bottom: '70px' } }, msg);
   $('#tab-build .stage').append(t);
-  setTimeout(() => t.remove(), 1800);
+  setTimeout(() => t.remove(), ms);
 }
 
 // ---- viewer toolbar
@@ -229,6 +306,7 @@ $('#btn-snap').onclick = () => {
 };
 
 render();
+if (catalog.data?.skipped) toast(`${catalog.data.skipped} item(s) in the data folder couldn't be read; see the server log`, 6000);
 
 // Handy from the dev tools console: vault.viewer, vault.build, vault.res
 window.vault = {

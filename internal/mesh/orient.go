@@ -56,6 +56,18 @@ func Normalize(m *Mesh) Orientation {
 	return o
 }
 
+// Apply moves another mesh of the same part into this orientation's frame
+// (rotated, then centred like the mesh Normalize was given), e.g. a second
+// level of detail simplified from the same source.
+func (o Orientation) Apply(m *Mesh) {
+	apply(m.Pos, o.Rot)
+	for i := 0; i < len(m.Pos); i += 3 {
+		for k := 0; k < 3; k++ {
+			m.Pos[i+k] -= float32(o.Center[k])
+		}
+	}
+}
+
 func identity() [9]float64 { return [9]float64{1, 0, 0, 0, 1, 0, 0, 0, 1} }
 
 func mul(a, b [9]float64) (c [9]float64) {

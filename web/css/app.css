@@ -227,7 +227,7 @@ main {
 }
 .viewer-status {
   position: absolute;
-  top: 14px;
+  top: 46px; /* below the size readout, which sits at the top left */
   left: 50%;
   transform: translateX(-50%);
   background: var(--panel);
@@ -983,4 +983,56 @@ table.hw td:first-child {
 .side select {
   font-size: 12px;
   padding: 4px 6px;
+}
+
+/* ---------------------------------------------------------------- problems */
+
+.viewer-status.warn {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  border-color: transparent;
+}
+button.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.pick-error {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin: 6px 0;
+}
+.setup {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(560px, calc(100% - 32px));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px 24px;
+  line-height: 1.5;
+}
+.setup h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+.setup code {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--panel-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  word-break: break-all;
+}
+.setup a {
+  color: var(--accent);
 }

@@ -109,7 +109,7 @@ export function initLibrary(listEl, viewer, catalog, { infoEl, statusEl, emptyEl
         h('div.path', p.path),
         h('div', `${s.join(' × ')} mm`),
         h('div.muted', `${pv.srcTris.toLocaleString()} triangles · preview ${pv.tris.toLocaleString()}`),
-        tags(p),
+        tags(p) || '',
         h('div.btn-row', { style: { marginTop: '10px' } }, h('a.btn.primary.sm', { href: fileUrl(p.id, true) }, `Download STL (${formatBytes(p.bytes)})`)),
       );
     } catch (e) {

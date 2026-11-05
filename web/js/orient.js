@@ -184,7 +184,7 @@ function wallHoles(g, side, slab = 8) {
 }
 
 async function fitted(ref) {
-  const pv = await loadPreview(ref.id);
+  const pv = await loadPreview(ref.id); // full detail: wall screw holes decide front/back
   const g = pv.geometry.clone();
   g.applyMatrix4(fitAxes(pv.size, ref.expect));
   g.computeBoundingBox();
@@ -268,11 +268,12 @@ const FACES = {
 };
 
 /**
- * Fraction of a part's footprint (seen along `axis`) whose outermost surface
- * on the `sign` side lies within 0.8 mm of that side's extreme plane — i.e.
- * how flat that face is. Mating faces (the side screwed to something) are flat.
+ * How flat both faces of a part are along `axis`: for each side (-1 / +1),
+ * the fraction of the part's footprint whose outermost surface on that side
+ * lies within 0.8 mm of that side's extreme plane. Mating faces (the side
+ * screwed to something) are flat. Both sides come from one rasterization.
  */
-export function faceFlatness(g, axis, sign, cell = 2) {
+export function faceFlatnessPair(g, axis, cell = 2) {
   const pos = g.attributes.position.array;
   const idx = g.index.array;
   g.computeBoundingBox();
@@ -283,40 +284,49 @@ export function faceFlatness(g, axis, sign, cell = 2) {
   const mx = [bb.max.x, bb.max.y, bb.max.z];
   const nu = Math.max(1, Math.ceil((mx[u] - mn[u]) / cell));
   const nv = Math.max(1, Math.ceil((mx[v] - mn[v]) / cell));
-  const m = new Float32Array(nu * nv).fill(sign > 0 ? -Infinity : Infinity);
+  const hi = new Float32Array(nu * nv).fill(-Infinity); // outermost surface on the + side
+  const lo = new Float32Array(nu * nv).fill(Infinity); // ... and on the - side
+  const mu = mn[u], mv = mn[v];
   for (let t = 0; t < idx.length; t += 3) {
-    const p = [0, 1, 2].map((k) => {
-      const i = idx[t + k] * 3;
-      return [(pos[i + u] - mn[u]) / cell, (pos[i + v] - mn[v]) / cell, pos[i + axis]];
-    });
-    const u0 = Math.max(0, Math.floor(Math.min(p[0][0], p[1][0], p[2][0])));
-    const u1 = Math.min(nu - 1, Math.ceil(Math.max(p[0][0], p[1][0], p[2][0])));
-    const v0 = Math.max(0, Math.floor(Math.min(p[0][1], p[1][1], p[2][1])));
-    const v1 = Math.min(nv - 1, Math.ceil(Math.max(p[0][1], p[1][1], p[2][1])));
-    const d = (p[1][1] - p[2][1]) * (p[0][0] - p[2][0]) + (p[2][0] - p[1][0]) * (p[0][1] - p[2][1]);
+    const i0 = idx[t] * 3, i1 = idx[t + 1] * 3, i2 = idx[t + 2] * 3;
+    const x0 = (pos[i0 + u] - mu) / cell, y0 = (pos[i0 + v] - mv) / cell, z0 = pos[i0 + axis];
+    const x1 = (pos[i1 + u] - mu) / cell, y1 = (pos[i1 + v] - mv) / cell, z1 = pos[i1 + axis];
+    const x2 = (pos[i2 + u] - mu) / cell, y2 = (pos[i2 + v] - mv) / cell, z2 = pos[i2 + axis];
+    const d = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
     if (Math.abs(d) < 1e-9) continue;
+    const u0 = Math.max(0, Math.floor(Math.min(x0, x1, x2)));
+    const u1 = Math.min(nu - 1, Math.ceil(Math.max(x0, x1, x2)));
+    const v0 = Math.max(0, Math.floor(Math.min(y0, y1, y2)));
+    const v1 = Math.min(nv - 1, Math.ceil(Math.max(y0, y1, y2)));
     for (let y = v0; y <= v1; y++) {
+      const py = y + 0.5;
       for (let x = u0; x <= u1; x++) {
         const px = x + 0.5;
-        const py = y + 0.5;
-        const a = ((p[1][1] - p[2][1]) * (px - p[2][0]) + (p[2][0] - p[1][0]) * (py - p[2][1])) / d;
-        const b = ((p[2][1] - p[0][1]) * (px - p[2][0]) + (p[0][0] - p[2][0]) * (py - p[2][1])) / d;
+        const a = ((y1 - y2) * (px - x2) + (x2 - x1) * (py - y2)) / d;
+        const b = ((y2 - y0) * (px - x2) + (x0 - x2) * (py - y2)) / d;
         if (a < -1e-4 || b < -1e-4 || 1 - a - b < -1e-4) continue;
-        const w = a * p[0][2] + b * p[1][2] + (1 - a - b) * p[2][2];
+        const w = a * z0 + b * z1 + (1 - a - b) * z2;
         const k = y * nu + x;
-        if (sign > 0 ? w > m[k] : w < m[k]) m[k] = w;
+        if (w > hi[k]) hi[k] = w;
+        if (w < lo[k]) lo[k] = w;
       }
     }
   }
-  const plane = sign > 0 ? mx[axis] : mn[axis];
   let covered = 0;
-  let flat = 0;
-  for (const w of m) {
-    if (!Number.isFinite(w)) continue;
+  let flatHi = 0;
+  let flatLo = 0;
+  for (let k = 0; k < hi.length; k++) {
+    if (hi[k] === -Infinity) continue;
     covered++;
-    if (Math.abs(w - plane) < 0.8) flat++;
+    if (Math.abs(hi[k] - mx[axis]) < 0.8) flatHi++;
+    if (Math.abs(lo[k] - mn[axis]) < 0.8) flatLo++;
   }
-  return covered ? flat / covered : 0;
+  return covered ? { [-1]: flatLo / covered, [1]: flatHi / covered } : { [-1]: 0, [1]: 0 };
+}
+
+/** Flatness of one face (see faceFlatnessPair). */
+export function faceFlatness(g, axis, sign, cell = 2) {
+  return faceFlatnessPair(g, axis, cell)[sign > 0 ? 1 : -1];
 }
 
 /**
@@ -326,8 +336,9 @@ export function faceFlatness(g, axis, sign, cell = 2) {
 export function mountFaceRotation(g, face) {
   const f = FACES[face];
   if (!f) return null;
-  const here = faceFlatness(g, f.axis, f.sign);
-  const there = faceFlatness(g, f.axis, -f.sign);
+  const pair = faceFlatnessPair(g, f.axis);
+  const here = pair[f.sign];
+  const there = pair[-f.sign];
   if (there <= here + 0.05) return null;
   // Half-turn about an axis perpendicular to the face normal.
   const about = f.axis === 1 ? [0, 0, 180] : f.axis === 2 ? [0, 180, 0] : [0, 180, 0];

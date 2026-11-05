@@ -33,19 +33,20 @@ function creasedNormals(g, creaseDeg = 35) {
   const nv = pos.length / 3;
   const nt = idx.length / 3;
   const fn = new Float32Array(nt * 3); // area-weighted face normals
+  const un = new Float32Array(nt * 3); // the same, unit length
   for (let t = 0; t < nt; t++) {
     const a = idx[3 * t] * 3, b = idx[3 * t + 1] * 3, c = idx[3 * t + 2] * 3;
     const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2];
     const vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
-    fn[3 * t] = uy * vz - uz * vy;
-    fn[3 * t + 1] = uz * vx - ux * vz;
-    fn[3 * t + 2] = ux * vy - uy * vx;
-  }
-  const unit = (t) => {
-    const x = fn[3 * t], y = fn[3 * t + 1], z = fn[3 * t + 2];
+    const x = uy * vz - uz * vy, y = uz * vx - ux * vz, z = ux * vy - uy * vx;
     const l = Math.hypot(x, y, z) || 1;
-    return [x / l, y / l, z / l];
-  };
+    fn[3 * t] = x;
+    fn[3 * t + 1] = y;
+    fn[3 * t + 2] = z;
+    un[3 * t] = x / l;
+    un[3 * t + 1] = y / l;
+    un[3 * t + 2] = z / l;
+  }
   // vertex -> incident faces (CSR)
   const start = new Uint32Array(nv + 1);
   for (let i = 0; i < idx.length; i++) start[idx[i] + 1]++;
@@ -55,36 +56,42 @@ function creasedNormals(g, creaseDeg = 35) {
   for (let i = 0; i < idx.length; i++) faces[fill[idx[i]]++] = (i / 3) | 0;
 
   const cos = Math.cos(THREE.MathUtils.degToRad(creaseDeg));
-  const outPos = [];
-  const outNrm = [];
+  // At most one output vertex per corner.
+  const outPos = new Float32Array(idx.length * 3);
+  const outNrm = new Float32Array(idx.length * 3);
   const outIdx = new Uint32Array(idx.length);
+  const taken = new Uint8Array(faces.length);
+  let n = 0;
   for (let v = 0; v < nv; v++) {
     const f0 = start[v], f1 = start[v + 1];
-    const taken = new Uint8Array(f1 - f0);
     for (let i = f0; i < f1; i++) {
-      if (taken[i - f0]) continue;
-      const seed = unit(faces[i]);
+      if (taken[i]) continue;
+      const s = faces[i] * 3;
+      const sx0 = un[s], sy0 = un[s + 1], sz0 = un[s + 2];
       let sx = 0, sy = 0, sz = 0;
-      const id = outPos.length / 3;
       for (let j = i; j < f1; j++) {
-        if (taken[j - f0]) continue;
+        if (taken[j]) continue;
         const t = faces[j];
-        const n = unit(t);
-        if (n[0] * seed[0] + n[1] * seed[1] + n[2] * seed[2] < cos) continue;
-        taken[j - f0] = 1;
+        if (un[3 * t] * sx0 + un[3 * t + 1] * sy0 + un[3 * t + 2] * sz0 < cos) continue;
+        taken[j] = 1;
         sx += fn[3 * t];
         sy += fn[3 * t + 1];
         sz += fn[3 * t + 2];
-        for (let k = 0; k < 3; k++) if (idx[3 * t + k] === v) outIdx[3 * t + k] = id;
+        for (let k = 0; k < 3; k++) if (idx[3 * t + k] === v) outIdx[3 * t + k] = n;
       }
       const l = Math.hypot(sx, sy, sz) || 1;
-      outPos.push(pos[3 * v], pos[3 * v + 1], pos[3 * v + 2]);
-      outNrm.push(sx / l, sy / l, sz / l);
+      outPos[3 * n] = pos[3 * v];
+      outPos[3 * n + 1] = pos[3 * v + 1];
+      outPos[3 * n + 2] = pos[3 * v + 2];
+      outNrm[3 * n] = sx / l;
+      outNrm[3 * n + 1] = sy / l;
+      outNrm[3 * n + 2] = sz / l;
+      n++;
     }
   }
   const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.BufferAttribute(new Float32Array(outPos), 3));
-  out.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(outNrm), 3));
+  out.setAttribute('position', new THREE.BufferAttribute(outPos.slice(0, 3 * n), 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(outNrm.slice(0, 3 * n), 3));
   out.setIndex(new THREE.BufferAttribute(outIdx, 1));
   out.userData = { ...g.userData };
   out.computeBoundingBox();
@@ -114,6 +121,9 @@ function materialFor(role) {
   return materials.get(role);
 }
 const placeholderMat = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.25, depthWrite: false });
+// Parts whose file is missing or unreadable: a red see-through box at the
+// part's nominal size, still clickable so the part card can say why.
+const missingMat = new THREE.MeshStandardMaterial({ color: 0xd9534f, transparent: true, opacity: 0.4, depthWrite: false });
 const unitBox = new THREE.BoxGeometry(1, 1, 1);
 const unitCylinder = new THREE.CylinderGeometry(0.5, 0.5, 1, 20);
 
@@ -137,11 +147,16 @@ function applyXform(g, xf) {
   g.computeBoundingBox();
 }
 
-function keepBodyBySide(g, axis, sign) {
+/**
+ * Connected bodies of an indexed geometry: for each vertex the id of its body,
+ * plus per body its vertex count, mean position and Y range.
+ */
+function connectedBodies(g) {
   const idx = g.index.array;
   const pos = g.attributes.position.array;
   const n = pos.length / 3;
-  const parent = new Int32Array(n).map((_, i) => i);
+  const parent = new Int32Array(n);
+  for (let i = 0; i < n; i++) parent[i] = i;
   const find = (x) => {
     while (parent[x] !== x) {
       parent[x] = parent[parent[x]];
@@ -154,30 +169,55 @@ function keepBodyBySide(g, axis, sign) {
     parent[find(idx[t + 1])] = a;
     parent[find(idx[t + 2])] = a;
   }
-  const sums = new Map();
+  const label = new Int32Array(n);
+  const bodies = new Map();
   for (let i = 0; i < n; i++) {
     const r = find(i);
-    const s = sums.get(r) || { sum: 0, count: 0 };
-    s.sum += pos[i * 3 + axis];
-    s.count++;
-    sums.set(r, s);
+    label[i] = r;
+    let b = bodies.get(r);
+    if (!b) bodies.set(r, (b = { count: 0, sum: [0, 0, 0], lo: Infinity, hi: -Infinity }));
+    b.count++;
+    b.sum[0] += pos[3 * i];
+    b.sum[1] += pos[3 * i + 1];
+    b.sum[2] += pos[3 * i + 2];
+    if (pos[3 * i + 1] < b.lo) b.lo = pos[3 * i + 1];
+    if (pos[3 * i + 1] > b.hi) b.hi = pos[3 * i + 1];
   }
-  const keepRoots = new Set([...sums.entries()].filter(([, s]) => s.count > 20 && Math.sign(s.sum / s.count) === sign).map(([r]) => r));
-  if (!keepRoots.size) return;
-  const remap = new Int32Array(n).fill(-1);
-  const newPos = [];
-  const newIdx = [];
-  for (let t = 0; t < idx.length; t++) {
-    const v = idx[t];
-    if (!keepRoots.has(find(v))) continue;
-    if (remap[v] < 0) {
-      remap[v] = newPos.length / 3;
-      newPos.push(pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]);
+  return { label, bodies };
+}
+
+/** Keeps only the triangles of the given bodies, with compact buffers (so bounding boxes only see them). */
+function keepBodies(g, label, keep) {
+  const idx = g.index.array;
+  const pos = g.attributes.position.array;
+  const remap = new Int32Array(pos.length / 3).fill(-1);
+  const newPos = new Float32Array(pos.length);
+  const newIdx = new Uint32Array(idx.length);
+  let nv = 0;
+  let ni = 0;
+  for (let t = 0; t < idx.length; t += 3) {
+    if (!keep.has(label[idx[t]])) continue;
+    for (let k = 0; k < 3; k++) {
+      const v = idx[t + k];
+      if (remap[v] < 0) {
+        remap[v] = nv;
+        newPos[3 * nv] = pos[3 * v];
+        newPos[3 * nv + 1] = pos[3 * v + 1];
+        newPos[3 * nv + 2] = pos[3 * v + 2];
+        nv++;
+      }
+      newIdx[ni++] = remap[v];
     }
-    newIdx.push(remap[v]);
   }
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(newPos), 3));
-  g.setIndex(newIdx);
+  g.setAttribute('position', new THREE.BufferAttribute(newPos.slice(0, 3 * nv), 3));
+  g.setIndex(new THREE.BufferAttribute(newIdx.slice(0, ni), 1));
+}
+
+/** Keeps the bodies whose centre lies on one side (sign) of an axis. */
+function keepBodyBySide(g, axis, sign) {
+  const { label, bodies } = connectedBodies(g);
+  const keep = new Set([...bodies].filter(([, b]) => b.count > 20 && Math.sign(b.sum[axis] / b.count) === sign).map(([r]) => r));
+  if (keep.size) keepBodies(g, label, keep);
 }
 
 /**
@@ -185,60 +225,26 @@ function keepBodyBySide(g, axis, sign) {
  * Keeps one connected body in place: 'tallest' / 'shortest' by height (Y).
  */
 function pickBody(g, which) {
-  const idx = g.index.array;
-  const pos = g.attributes.position.array;
-  const n = pos.length / 3;
-  const parent = new Int32Array(n).map((_, i) => i);
-  const find = (x) => {
-    while (parent[x] !== x) {
-      parent[x] = parent[parent[x]];
-      x = parent[x];
-    }
-    return x;
-  };
-  for (let t = 0; t < idx.length; t += 3) {
-    const a = find(idx[t]);
-    parent[find(idx[t + 1])] = a;
-    parent[find(idx[t + 2])] = a;
-  }
-  const bodies = new Map();
-  for (let i = 0; i < n; i++) {
-    const r = find(i);
-    const b = bodies.get(r) || { lo: Infinity, hi: -Infinity, count: 0 };
-    b.lo = Math.min(b.lo, pos[i * 3 + 1]);
-    b.hi = Math.max(b.hi, pos[i * 3 + 1]);
-    b.count++;
-    bodies.set(r, b);
-  }
-  const list = [...bodies.entries()].filter(([, b]) => b.count > 20).sort((x, y) => x[1].hi - x[1].lo - (y[1].hi - y[1].lo));
+  const { label, bodies } = connectedBodies(g);
+  const list = [...bodies].filter(([, b]) => b.count > 20).sort((x, y) => x[1].hi - x[1].lo - (y[1].hi - y[1].lo));
   if (list.length < 2) return;
-  const keep = (which === 'shortest' ? list[0] : list[list.length - 1])[0];
-  // Rebuild compact buffers so bounding boxes only see the kept body.
-  const remap = new Int32Array(n).fill(-1);
-  const newPos = [];
-  const newIdx = [];
-  for (let t = 0; t < idx.length; t++) {
-    const v = idx[t];
-    if (find(v) !== keep) continue;
-    if (remap[v] < 0) {
-      remap[v] = newPos.length / 3;
-      newPos.push(pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]);
-    }
-    newIdx.push(remap[v]);
-  }
-  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(newPos), 3));
-  g.setIndex(newIdx);
+  keepBodies(g, label, new Set([(which === 'shortest' ? list[0] : list[list.length - 1])[0]]));
 }
 
 export class Viewer {
-  constructor(container, { onPick, onStatus, onLayout, colorOf } = {}) {
+  /**
+   * lod: preview level of detail to load ('build' for assembled builds, where
+   * small parts need fewer triangles; 'full' for single parts).
+   */
+  constructor(container, { onPick, onStatus, onLayout, colorOf, lod = 'full' } = {}) {
     this.container = container;
+    this.lod = lod;
     this.colorOf = colorOf;
     this.onPick = onPick;
     this.onStatus = onStatus;
     this.onLayout = onLayout;
     this.objects = new Map(); // placement key -> { mesh, pl, dims, loaded }
-    this.geoCache = new Map(); // `${partId}|${role}` -> { geometry, dims }
+    this.geoCache = new Map(); // `${partId}|${geoKey}` -> Promise<{ geometry, dims, fileToLocal }>, oldest first
     this.opts = { open: 0, explode: 0 };
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -253,6 +259,11 @@ export class Viewer {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.target.set(0, 300, 0);
+    // Draw only when something changed (camera, layout, colors, size): an
+    // assembled build can be millions of triangles, too many to redraw 60
+    // times a second while nothing moves.
+    this._dirty = true;
+    this.controls.addEventListener('change', () => this.requestRender());
 
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f96, 1.6));
     const sun = new THREE.DirectionalLight(0xffffff, 1.8);
@@ -284,15 +295,23 @@ export class Viewer {
       this.renderer.setSize(w, h, false);
       this.camera.aspect = w / h;
       this.camera.updateProjectionMatrix();
+      this.requestRender();
     };
     new ResizeObserver(this._resize).observe(container);
     this._resize();
     const tick = () => {
-      this.controls.update();
-      this.renderer.render(this.scene, this.camera);
       requestAnimationFrame(tick);
+      this.controls.update(); // emits 'change' while damping settles
+      if (!this._dirty) return;
+      this._dirty = false;
+      this.renderer.render(this.scene, this.camera);
     };
     tick();
+  }
+
+  /** Schedules a redraw on the next animation frame. */
+  requestRender() {
+    this._dirty = true;
   }
 
   _setupPicking() {
@@ -337,11 +356,13 @@ export class Viewer {
       if (o.loaded) o.mesh.material = this._mat(o.pl);
     }
     this._updateSelectionBox();
+    this.requestRender();
   }
 
   _updateSelectionBox() {
+    this.requestRender();
     const o = this.selected && this.objects.get(this.selected);
-    if (!o || !o.loaded || !o.mesh.visible) {
+    if (!o || !(o.loaded || o.failed) || !o.mesh.visible) {
       if (this.selBox) this.selBox.visible = false;
       return;
     }
@@ -407,7 +428,7 @@ export class Viewer {
         mesh.material = this._mat(pl);
         mesh.castShadow = true;
         o.solidBox = true;
-      }
+      } else this._fail(o, 'there is no file for this part in the data folder');
     }
     for (const [k, o] of this.objects) {
       if (!keep.has(k)) {
@@ -415,6 +436,7 @@ export class Viewer {
         this.objects.delete(k);
       }
     }
+    this._pruneGeometry();
     this.recolor();
     this._relayout();
     this._status();
@@ -424,10 +446,15 @@ export class Viewer {
     const { partId, role } = o.pl;
     const ck = `${partId}|${geoKey(o.pl)}`;
     try {
-      if (!this.geoCache.has(ck)) {
+      if (this.geoCache.has(ck)) {
+        // Most recently used last (see _pruneGeometry).
+        const p = this.geoCache.get(ck);
+        this.geoCache.delete(ck);
+        this.geoCache.set(ck, p);
+      } else {
         this.geoCache.set(
           ck,
-          loadPreview(partId).then(async (pv) => {
+          loadPreview(partId, this.lod).then(async (pv) => {
             const g = pv.geometry.clone();
             if (o.pl.xform) {
               applyXform(g, o.pl.xform);
@@ -483,24 +510,68 @@ export class Viewer {
       o.dims = dims;
       o.fileToLocal = fileToLocal;
       o.loaded = true;
+      o.failed = null;
     } catch (e) {
-      console.warn(e);
-      o.failed = true;
       this.geoCache.delete(ck);
+      if (this.objects.get(o.pl.key) !== o) return;
+      console.warn(`part ${o.pl.name || partId}:`, e);
+      this._fail(o, e.reason || e.message);
     }
     this._relayout();
     this._status();
   }
 
+  /** Marks a placement as not loadable; it stays as a red box at its nominal size. */
+  _fail(o, reason) {
+    o.failed = reason || 'unknown error';
+    o.loaded = false;
+    o.mesh.geometry = unitBox;
+    o.mesh.material = missingMat;
+    o.mesh.castShadow = false;
+  }
+
+  /** Why a placement couldn't be drawn ('' if it was). */
+  failure(key) {
+    return this.objects.get(key)?.failed || '';
+  }
+
+  /** Tries the parts that failed to load again (e.g. after fixing the data folder). */
+  retryFailed() {
+    for (const o of this.objects.values()) {
+      if (!o.failed || !o.pl.partId) continue;
+      o.failed = null;
+      o.mesh.material = placeholderMat;
+      this._load(o);
+    }
+    this._status();
+  }
+
+  /**
+   * Frees geometry no current placement uses, keeping the most recently used
+   * ones so toggling an option back and forth stays instant.
+   */
+  _pruneGeometry(keepUnused = 60) {
+    const used = new Set();
+    for (const o of this.objects.values()) if (o.pl.partId) used.add(`${o.pl.partId}|${geoKey(o.pl)}`);
+    const unused = [...this.geoCache.keys()].filter((k) => !used.has(k));
+    for (const k of unused.slice(0, Math.max(0, unused.length - keepUnused))) {
+      const p = this.geoCache.get(k);
+      this.geoCache.delete(k);
+      p.then((r) => r.geometry.dispose(), () => {});
+    }
+  }
+
   _status() {
     let total = 0;
     let done = 0;
+    const failed = [];
     for (const o of this.objects.values()) {
+      if (o.failed) failed.push({ pl: o.pl, reason: o.failed });
       if (!o.pl.partId) continue;
       total++;
       if (o.loaded || o.failed) done++;
     }
-    this.onStatus?.({ total, done });
+    this.onStatus?.({ total, done, failed });
   }
 
   _relayout() {
@@ -525,6 +596,7 @@ export class Viewer {
       }
       this.lastLayout = L;
       this._updateSelectionBox();
+      this.requestRender();
       this.onLayout?.(L);
       if (!this._fitted) {
         this.fit();
@@ -538,8 +610,9 @@ export class Viewer {
     this.mode = 'single';
     for (const o of this.objects.values()) this.root.remove(o.mesh);
     this.objects.clear();
+    this.requestRender();
     const token = (this._single = {});
-    const pv = await loadPreview(part.id);
+    const pv = await loadPreview(part.id, this.lod);
     if (this._single !== token) return;
     const g = pv.geometry.clone();
     // Smallest extent -> up (Y), largest -> X.
@@ -559,6 +632,7 @@ export class Viewer {
     this.root.add(mesh);
     this.objects.set('single', { mesh, pl: { key: 'single', partId: part.id, role: 'part' }, loaded: true });
     this.fit();
+    this.requestRender();
     return pv;
   }
 
@@ -577,6 +651,7 @@ export class Viewer {
     const c = bb.getCenter(new THREE.Vector3());
     g.translate(-c.x, -bb.min.y, -c.z);
     this.fit();
+    this.requestRender();
   }
 
   fit() {
@@ -593,6 +668,7 @@ export class Viewer {
     this.camera.near = Math.max(1, dist / 100);
     this.camera.far = dist * 20;
     this.camera.updateProjectionMatrix();
+    this.requestRender();
   }
 
   /** PNG snapshot of the current view. */

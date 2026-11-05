@@ -3,7 +3,16 @@ import * as THREE from 'three';
 
 let catalogPromise = null;
 
-/** Loads the catalog once. Returns { parts, byId }. */
+function indexCatalog(c) {
+  c.parts ||= [];
+  c.byId = new Map(c.parts.map((p) => [p.id, p]));
+  return c;
+}
+
+/**
+ * Loads the catalog once. Returns { parts, byId, data } where data describes
+ * the data folder ({ dir, found, error, parts, skipped }).
+ */
 export function loadCatalog() {
   if (!catalogPromise) {
     catalogPromise = fetch('/api/catalog')
@@ -11,12 +20,23 @@ export function loadCatalog() {
         if (!r.ok) throw new Error(`catalog: HTTP ${r.status}`);
         return r.json();
       })
-      .then((c) => {
-        c.byId = new Map(c.parts.map((p) => [p.id, p]));
-        return c;
+      .then(indexCatalog)
+      .catch((e) => {
+        catalogPromise = null; // allow retry
+        throw e;
       });
   }
   return catalogPromise;
+}
+
+/** Asks the server to read the data folder again; returns the new catalog. */
+export async function rescanCatalog() {
+  const r = await fetch('/api/rescan', { method: 'POST' });
+  if (!r.ok) throw new Error(`rescan: HTTP ${r.status}`);
+  const c = indexCatalog(await r.json());
+  catalogPromise = Promise.resolve(c);
+  meshCache.clear();
+  return c;
 }
 
 export const fileUrl = (id, download = false) => `/api/file/${id}${download ? '?download' : ''}`;
@@ -29,42 +49,66 @@ export function zipUrl(name, items) {
   return `/api/zip?name=${encodeURIComponent(name)}&items=${list}`;
 }
 
-const meshCache = new Map(); // id -> Promise<{geometry, size, srcTris}>
+const meshCache = new Map(); // `${id}|${lod}` -> Promise<{geometry, size, srcTris, tris}>
+
+/** A preview that couldn't be loaded; `reason` is the server's explanation. */
+export class PreviewError extends Error {
+  constructor(id, status, reason) {
+    super(reason || `HTTP ${status}`);
+    this.id = id;
+    this.status = status;
+    this.reason = reason || (status ? `the server answered HTTP ${status}` : 'the server could not be reached');
+  }
+}
 
 /**
  * Fetches and decodes a preview mesh (see internal/mesh/format.go).
  * The geometry is centered at the origin with its tightest bounding box
  * aligned to the axes; callers decide which axis is width/height/depth.
+ * lod: 'full' (one part on its own) or 'build' (lighter, for assembled
+ * builds; small parts get fewer triangles).
  */
-export function loadPreview(id) {
-  if (!meshCache.has(id)) {
-    // Previews revalidate by ETag. The query string only skips copies browsers
-    // cached under the old day-long max-age; it never needs bumping again.
-    const p = fetch(`/api/preview/${id}?r=2`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`preview ${id}: HTTP ${r.status}`);
+export function loadPreview(id, lod = 'full') {
+  const key = `${id}|${lod}`;
+  if (!meshCache.has(key)) {
+    // Previews revalidate by ETag (cheap 304s).
+    const p = fetch(`/api/preview/${id}?lod=${lod}`)
+      .catch(() => {
+        throw new PreviewError(id, 0, '');
+      })
+      .then(async (r) => {
+        if (!r.ok) throw new PreviewError(id, r.status, (await r.text().catch(() => '')).trim());
         return r.arrayBuffer();
       })
-      .then(decodePreview)
+      .then((buf) => {
+        try {
+          return decodePreview(buf);
+        } catch (e) {
+          throw new PreviewError(id, 200, `the preview data is damaged (${e.message})`);
+        }
+      })
       .catch((e) => {
-        meshCache.delete(id); // allow retry
+        meshCache.delete(key); // allow retry
         throw e;
       });
-    meshCache.set(id, p);
+    meshCache.set(key, p);
   }
-  return meshCache.get(id);
+  return meshCache.get(key);
 }
 
 function decodePreview(buf) {
+  if (buf.byteLength < 76) throw new Error('too short');
   const dv = new DataView(buf);
   const magic = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3));
-  if (magic !== 'VMS1') throw new Error('bad preview format');
+  if (magic !== 'VMS1') throw new Error('unknown format');
   const nv = dv.getUint32(4, true);
   const nt = dv.getUint32(8, true);
   const srcTris = dv.getUint32(12, true);
   const size = [dv.getFloat32(16, true), dv.getFloat32(20, true), dv.getFloat32(24, true)];
   const posOff = 76;
   const idxOff = posOff + nv * 12;
+  if (idxOff + nt * 12 > buf.byteLength) throw new Error('truncated');
+  if (!nt) throw new Error('no triangles');
   const pos = new Float32Array(buf.slice(posOff, idxOff));
   const idx = new Uint32Array(buf.slice(idxOff, idxOff + nt * 12));
   const geometry = new THREE.BufferGeometry();
