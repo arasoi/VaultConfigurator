@@ -24,17 +24,22 @@ func Simplify(s Soup, maxTris int) *Mesh {
 	if diag == 0 || s.Tris() == 0 {
 		return &Mesh{}
 	}
-	weld := cluster(s, mn, diag*1e-6, false)
+	weld := fillHoles(cluster(s, mn, diag*1e-6, false), diag*holeExtent)
 	if weld.Tris() <= maxTris {
 		return weld
 	}
 	m := weld
 	if limit := maxTris * clusterFactor; m.Tris() > limit {
 		weld = nil
-		m = clusterTo(s, mn, diag, limit)
+		m = fillHoles(clusterTo(s, mn, diag, limit), diag*holeExtent)
 	}
-	return Decimate(m, maxTris)
+	// Clustering can leave small cracks; close those too.
+	return fillHoles(Decimate(m, maxTris), diag*holeExtent)
 }
+
+// holeExtent: holes in the source surface up to this fraction of the part's
+// diagonal are filled (see fillHoles).
+const holeExtent = 0.25
 
 // clusterFactor: very large inputs are first clustered to this multiple of the
 // triangle budget, which keeps decimation fast and its memory bounded.

@@ -188,6 +188,36 @@ func (d *decimator) push(a, b int32) {
 // canCollapse rejects collapses that would flip or squash a surviving
 // triangle around a or b.
 func (d *decimator) canCollapse(a, b int32, p [3]float64) bool {
+	// Link condition: a and b may only share the neighbours of the triangles
+	// on edge a-b. Otherwise the collapse would pinch the surface into a
+	// non-manifold edge or tear a hole next to it.
+	shared := 0
+	na := map[int32]bool{}
+	for _, t := range d.vtris[a] {
+		if d.alive[t] {
+			for _, w := range d.tris[t] {
+				na[w] = true
+			}
+		}
+	}
+	common := map[int32]bool{}
+	for _, t := range d.vtris[b] {
+		if !d.alive[t] {
+			continue
+		}
+		tri := d.tris[t]
+		if tri[0] == a || tri[1] == a || tri[2] == a {
+			shared++
+		}
+		for _, w := range tri {
+			if w != a && w != b && na[w] {
+				common[w] = true
+			}
+		}
+	}
+	if shared == 0 || len(common) != shared {
+		return false
+	}
 	for _, v := range [2]int32{a, b} {
 		for _, t := range d.vtris[v] {
 			if !d.alive[t] {

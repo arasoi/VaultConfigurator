@@ -15,7 +15,7 @@ import (
 )
 
 // algoVersion is part of the cache key; bump it when preview generation changes.
-const algoVersion = "5"
+const algoVersion = "6"
 
 // Previews generates and caches simplified preview meshes on disk.
 type Previews struct {

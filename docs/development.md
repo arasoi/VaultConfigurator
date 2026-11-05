@@ -104,7 +104,12 @@ Data/  ──scan──▶  catalog (tags parsed from file names)  ──▶  /a
    Simplification is quadric edge collapse (`decimate.go`), which collapses the edges that change
    the shape least, so flat areas get a few large triangles and edges, fillets and small features
    keep theirs. Inputs above 4× the budget are first clustered on a grid, each cell's vertex placed
-   on the original surfaces, not averaged. A 7 M-triangle module takes ~7 s and a typical part
+   on the original surfaces, not averaged. Collapses must pass the link condition (the two
+   vertices share only the neighbours of the edge's triangles), so they never pinch or tear the
+   surface. Some source files are missing faces (the S5 sustainer roof lacks a 1.3 × 53 mm strip
+   in its side wall, which slicers repair silently); `holes.go` fills small groups of open edges
+   (up to a quarter of the part's diagonal) with a fan, before decimating and again after, so
+   they don't show as see-through slits. A 7 M-triangle module takes ~7 s and a typical part
    1–2 s the first time; after that they load instantly (`-warm` pre-generates them all).
    Previews are served with an ETag from the cache key, which includes `algoVersion` in
    `previews.go`, so bumping it reaches browsers immediately. The viewer shades with smooth
