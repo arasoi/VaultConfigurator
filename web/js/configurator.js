@@ -198,10 +198,10 @@ export function renderConfig(root, build, parts, update) {
     h('div.levels', levelEls, h('div.ground', build.base === 'none' ? 'floor' : 'base')),
   );
 
-  const topIsDrawer = build.levels.length && build.levels[n - 1].cols.some((c) => c.type === 'drawer');
+  const topHasSustainer = build.levels.length && build.levels[n - 1].cols.some((c) => c.type === 'sustainer');
   const roof = section(
     'Roof',
-    topIsDrawer
+    build.levels.length
       ? [
           select([...ROOFS.map((r) => ({ value: r.key, label: r.label })), { value: 'none', label: 'No roof' }], build.roof, set('roof')),
           roofTakesHandle(build.roof)
@@ -209,8 +209,9 @@ export function renderConfig(root, build, parts, update) {
             : build.roof !== 'none'
               ? h('p.muted.hint', 'This roof has no handle mount. The gridfinity and heavyweight roofs take a top handle.')
               : null,
+          topHasSustainer && build.roof !== 'none' ? h('p.muted.hint', 'On a sustainer the roof sits on its lid (same alignment keys) and lifts with it.') : null,
         ]
-      : h('p.muted', 'The top level is a sustainer, which has its own lid.'),
+      : null,
   );
 
   const base = section('Base', select(BASES.map((b) => ({ value: b.key, label: b.label })), build.base, set('base')));

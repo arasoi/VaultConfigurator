@@ -62,9 +62,10 @@ copy of the top level. For each level you can set:
   own drawers and interior.
 - **Level tools:** move the level up (↑) or down (↓), duplicate it (⧉) or remove it (✕).
 
-**Roof.** If the top level is a drawer, pick the roof: gridfinity, table, bowl, heavyweight (L/XL),
+**Roof.** Pick the roof for the top level: gridfinity, table, bowl, heavyweight (L/XL),
 heavyweight cut (XL), under-table mount, or none. The gridfinity and heavyweight roofs can take the
-**top carry handle**. A sustainer on top uses its own lid instead.
+**top carry handle**. A roof also fits on a sustainer's lid (the lid has the same alignment keys as
+a module top) and lifts with the lid when it opens; choose **No roof** to leave the lid bare.
 
 **Drawers.** Choose the drawer **handle**: a knob, or a flush **hidden key**, with one removable key
 per build. Builds with grid dividers also choose loose or tight divider pins, and straight or

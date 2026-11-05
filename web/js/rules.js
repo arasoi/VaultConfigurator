@@ -327,7 +327,8 @@ export function resolve(build, parts) {
     place({ partId: k2?.id, role: 'key', shelf: true, expect: [34, 29, 29.7] });
   }
 
-  // ---- roof on top drawer columns
+  // ---- roof on top of each top-level column: on a drawer module, or on a
+  // sustainer's lid (the lid's top has the same alignment keys as a module's).
   const top = levels[levels.length - 1];
   if (top && build.roof !== 'none') {
     const layout = LAYOUTS[W].find((l) => l.key === top.layout) || LAYOUTS[W][0];
@@ -336,7 +337,6 @@ export function resolve(build, parts) {
       const w = WIDTH[size];
       const cx = x + w / 2;
       x += w;
-      if ((top.cols[ci] || {}).type !== 'drawer') return; // sustainers carry their own lid
       const rs = size.replace('2', ''); // L2 -> L, XL2 -> XL
       let variant = build.roof;
       if (variant === 'heavyweight-cut' && rs !== 'XL') variant = 'heavyweight';
@@ -1475,6 +1475,7 @@ export function layout(build, res, dimsOf, opts = {}) {
   // ---- levels
   const levelY = [];
   const colTops = new Map(); // "level:col" -> top y of that column
+  const lidHinge = new Map(); // "level:col" -> { py, pz, a }: a sustainer lid's pivot and opening angle
   (build.levels || []).forEach((lv, li) => {
     let levelH = 0;
     const items = res.placements.filter((p) => p.slot && p.slot.level === li);
@@ -1516,6 +1517,7 @@ export function layout(build, res, dimsOf, opts = {}) {
           const dy = ly + ls[1] / 2 - py; // closed lid centre relative to the pivot
           const dz = -ms[2] / 2 + ls[2] / 2 - pz;
           set(lid, mod.slot.x, py + dy * Math.cos(a) - dz * Math.sin(a), pz + dy * Math.sin(a) + dz * Math.cos(a), ls, a);
+          lidHinge.set(`${li}:${ci}`, { py, pz, a });
         }
         const fac = colItems.find((p) => p.role === 'sfacade');
         if (fac) {
@@ -1536,7 +1538,14 @@ export function layout(build, res, dimsOf, opts = {}) {
   for (const r of byRole('roof')) {
     const s = dims(r);
     const ry = (colTops.get(`${r.slot.level}:${r.slot.col}`) ?? top) + gap;
-    set(r, r.slot.x, ry + s[1] / 2, 0, s);
+    // On a sustainer, the roof sits on the lid and swings open with it.
+    const hinge = lidHinge.get(`${r.slot.level}:${r.slot.col}`);
+    if (hinge && hinge.a) {
+      const dy = ry + s[1] / 2 - hinge.py;
+      const dz = -hinge.pz;
+      const a = hinge.a;
+      set(r, r.slot.x, hinge.py + dy * Math.cos(a) - dz * Math.sin(a), hinge.pz + dy * Math.sin(a) + dz * Math.cos(a), s, a);
+    } else set(r, r.slot.x, ry + s[1] / 2, 0, s);
     top = Math.max(top, ry + s[1]);
     // Handles are attached to the roof (positioned with the other attached
     // parts); they just add to the overall height.
