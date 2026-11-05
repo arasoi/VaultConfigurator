@@ -5,6 +5,8 @@ pick a footprint, stack drawers and sustainers, add a roof, base, wheels, backbo
 pegboards, see the assembled build in 3D, and download exactly the STL files (plus a hardware list)
 you need to print it.
 
+![The Build tab: build options, 3D view and parts list](docs/images/build-trolley.png)
+
 > [!IMPORTANT]
 > **This repository does not include any VAULT files.** VAULT is a paid 3D-print design owned by
 > its creator. To use this app you must already have your own copy of the VAULT STL files and
@@ -19,6 +21,21 @@ you need to print it.
   three.js is vendored in `web/vendor/three` so nothing loads from a CDN.
 - **Back end:** a single Go binary using only the standard library. It indexes the data folder,
   serves the site, generates lightweight 3D previews of the STLs, and streams ZIP downloads.
+
+**How to use it:** see the [user guide](docs/user-guide.md).
+
+## Screenshots
+
+| | |
+| --- | --- |
+| ![Drawers and lids opened, parts exploded](docs/images/open-explode.png) | ![Colour groups, presets and the part card](docs/images/color-card.png) |
+| Open drawers & lids, and explode the parts to see how they fit | Colour presets, colour groups, and per-part colours from the 3D view |
+| ![An M-width desk tower on feet](docs/images/desk-tower.png) | ![Parts library with search and preview](docs/images/parts-library.png) |
+| Any footprint and stack, e.g. a desk tower with three drawers in one 4F module | Browse, preview and download every file in your data folder |
+
+The screenshots show renders of the VAULT parts as the app draws them, from the designer's STL
+files (not included here). To regenerate them after UI changes, run the app and
+`node docs/capture-screenshots.mjs`.
 
 ## Data files (not included)
 
@@ -207,6 +224,9 @@ web/js/viewer.js            three.js scene
 web/js/library.js           Parts library tab
 web/js/docs.js              Documentation tab
 web/vendor/three/           three.js r170 (MIT)
+docs/user-guide.md          user documentation
+docs/images/                screenshots used by the README and user guide
+docs/capture-screenshots.mjs  regenerates docs/images from the running app (headless Chrome)
 ```
 
 ## API
