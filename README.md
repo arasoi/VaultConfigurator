@@ -340,6 +340,11 @@ one color, since they print together.
   board, and the M16 rods (x = ±40 / 85 / 123 / 167 mm for S / M / L / XL, measured) run through
   it and the boards below. Knobs sit in pockets 17.5 mm inboard of each rod; S has one knob, in
   its Lock Part 2. The stationary handle bolts to the topmost backbone board, below the lock.
+  Wheels sit on the M16 rod through the base's bore (20.1 mm above its bottom, 30 mm from its
+  back edge, the same on every base). From the base's side face outwards: the bushing, then the
+  disk with its flange side against the base, then the cover with its cap facing out, mirrored per
+  side. The bearing sits in the pockets of disk and cover, and the tyre wraps both. The base sits
+  so the tyres touch the ground.
 - **Accessories & extras:** any pegboard hook, container, container hook or holder, and any
   grid divider piece for custom layouts, with quantities; shown on a shelf beside the build.
 

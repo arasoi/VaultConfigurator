@@ -104,6 +104,17 @@ export const PEGBOARDS = [
 
 /** Base rod lengths for wheels (manual: hardware list). */
 const ROD_LEN = { S: 248, M: 338, L: 414, XL: 504 };
+/**
+ * Wheels, measured on the STLs. Every base has a full-width M16 bore 20.1 mm
+ * above its bottom and 30 mm in from its back edge. On each end of the rod,
+ * from the base's side face outwards: the bushing (33 mm, on the rod); the
+ * disk (20.1 mm, flange side against the base); the cover (23.9 mm, closed cap
+ * facing out). The 6205 bearing sits in the pockets of disk and cover
+ * (5.9 + 8.9 mm), and the tyre (Ø160 × 40.6) wraps the 44 mm disk + cover.
+ * Offsets are part centres from the base's side face. In each part's preview
+ * frame its axis is file z: +z is the disk's flange side and the cover's cap.
+ */
+const WHEEL = { axleY: 20.1, axleZ: 30, bushing: 16.5, disk: 10.05, cover: 32.05, tyre: 22 };
 
 /**
  * Pull-out handle: x of the two vertical M16 rods (Ø17 holes) from the centre,
@@ -387,12 +398,21 @@ export function resolve(build, parts) {
       addHw('M4 25mm bolt', 12);
       addHw('6205ZZ bearing', 2);
       addHw('SCSAW stopper (16d 30D 10mm)', 2);
+      // On the rod through the base's bore (see WHEEL). rows(s) turns a part's
+      // axis (file z) to point s·X.
+      const rows = (s) => [
+        [0, 0, s],
+        [0, 1, 0],
+        [-s, 0, 0],
+      ];
+      const half = WIDTH[W] / 2;
       for (const side of [-1, 1]) {
-        const tp = place({ partId: wheelPart(/^Tyre/)?.id, role: 'wheel', side, expect: [40.6, 160, 160] });
-        place({ partId: wheelPart(/^Cover/)?.id, role: 'wheelcover', side, expect: [23.9, 140, 140] });
-        // Disk (hub) inside the tyre, bushing on the axle.
-        place({ partId: wheelPart(/^Disk/)?.id, role: 'wheelcover', attach: { to: tp.key }, expect: [20.1, 142, 142] });
-        place({ partId: wheelPart(/^Bushing/)?.id, role: 'wheelcover', attach: { to: tp.key, x: -side * 12 }, expect: [33, 31.2, 31.2] });
+        const axle = (off) => ({ to: basePl.key, x: side * (half + off), yRef: 'bottom', y: WHEEL.axleY, zRef: 'back', z: WHEEL.axleZ });
+        const at = (partRe, role, off, s) => place({ partId: wheelPart(partRe)?.id, role, side, attach: axle(off), xform: { origin: [0, 0, 0], rows: rows(s) } });
+        at(/^Bushing/, 'wheelcover', WHEEL.bushing, side);
+        at(/^Disk/, 'wheelcover', WHEEL.disk, -side); // flange towards the base
+        at(/^Cover/, 'wheelcover', WHEEL.cover, side); // cap facing out
+        at(/^Tyre/, 'wheel', WHEEL.tyre, side);
       }
     } else if (build.base === 'casters') {
       addHw('Caster with M8 bolt', 4);
@@ -1259,15 +1279,12 @@ export function layout(build, res, dimsOf, opts = {}) {
         set(f, 0, s[1] / 2 - gap * 0.5, f.side * (D / 2 - s[2] / 2 - 10), s);
       }
     }
-    if (build.base === 'wheels') under = Math.max(under, FIT.wheelR - 20);
+    // Wheels: the axle sits at tyre radius, so the tyres touch the ground (the
+    // foot at the front tucks 2 mm further into the base than without wheels).
+    if (build.base === 'wheels') under = FIT.wheelR - WHEEL.axleY;
     if (build.base === 'casters') under = 45;
     const by = under + bs[1] / 2;
     set(base, 0, by, 0, bs);
-    for (const wpl of [...byRole('wheel'), ...byRole('wheelcover')]) {
-      const s = dims(wpl);
-      const off = wpl.role === 'wheel' ? s[0] / 2 : s[0] / 2 + dims(byRole('wheel')[0] || wpl)[0] - 8;
-      set(wpl, wpl.side * (W / 2 + off + 2 + gap * 0.5), FIT.wheelR, -D / 2 + FIT.wheelR - 10, s);
-    }
     y = under + bs[1] - FIT.baseLip + gap;
   }
 
