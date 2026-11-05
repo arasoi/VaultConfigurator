@@ -58,7 +58,8 @@ function geoKey(pl) {
  * the mesh origin is the anchor the layout positions.
  */
 function applyXform(g, xf) {
-  if (xf.body) keepBodyBySide(g, xf.body.axis, xf.body.sign);
+  // One filter, or several applied in turn (e.g. one pin out of a set of four).
+  for (const b of [].concat(xf.body || [])) keepBodyBySide(g, b.axis, b.sign);
   g.translate(-xf.origin[0], -xf.origin[1], -xf.origin[2]);
   const r = xf.rows;
   g.applyMatrix4(new THREE.Matrix4().set(...r[0], 0, ...r[1], 0, ...r[2], 0, 0, 0, 0, 1));

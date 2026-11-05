@@ -317,8 +317,13 @@ one color, since they print together.
   geometry and the parts' embossed "UP" markers. Each facade has a 4.1 mm latch pocket on its
   front, notched at the top edge. The holder plate sits behind the facade, screwed through its
   61.4 × 9 mm holes, and its pivot boss comes forward through the notch. The link hangs from the
-  boss, and the lever's knuckle hangs from the link. The lever is a tray whose walls rest in the
-  pocket, and its hook reaches back over the lid's catch bump, its top roughly level with the lid's.
+  boss's pivot and pins between the lever's side walls. The pin file holds four pins, drawn
+  separately: two short ones through the link's ears into the boss, and two stepped long ones
+  through the lever's walls into the link's bar. The lever is a tray whose walls rest in the
+  pocket, and its hook reaches back over the lid's front edge. The latch is hinged and the STLs are
+  modelled closed (the 1F lever centred on the holder), but in that position the hook's tooth sits
+  4.4 mm inside the lid's catch, so the lever is lifted 4.4 mm to rest on it. The 2-4F lever is 3 mm
+  longer at each end, so it sits 3 mm higher again.
   Label,
   gridfinity baseplate, dividers with counts (across, front-back, sealed rows).
 - **Base & back:** base connector (split bases), feet, tyres, hubs (disk, cover, bushing),

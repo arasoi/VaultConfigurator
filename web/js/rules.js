@@ -675,13 +675,38 @@ const LOCK_HOLDER_DROP = { 1: 11.5, 2: 17.5, 4: 17.5 };
  * - holder: 5 mm plate (y -9.5..-4.5) behind the facade, screwed through it; its
  *   30 mm pivot boss pokes forward through the facade's top notch. Pivot bore at
  *   (x -3, y 6). "UP" markers on the plate back and the boss shoulder: file −x is up.
- * - link (inner part): U-shaped, ear holes (x 8) on the boss pivot, bar bore (x −7.5)
- *   on the lever's knuckle: 15.5 mm between them.
- * - lever (outer part): a tray, open towards the facade, its walls resting in the
- *   facade's 4.1 mm pocket; the hook at the top reaches back over the lid's catch
- *   bump. Knuckle bore at x −22 (1F) / −25 (2-4F), y 2. "UP" marker: file +x is up.
+ * - lever (outer part): a tray, open towards the facade, its walls (y 0) resting in
+ *   the facade's 4.1 mm pocket; the hook at the top reaches back over the lid.
+ *   The STLs are modelled closed with the 1F lever's centre level with the
+ *   holder's, but there the hook's tooth (15.8 mm above the lever centre) would
+ *   sit 4.4 mm inside the lid's catch bump (8.7 mm above the facade top), so the
+ *   lever is lifted 4.4 mm to rest on the catch. The 2-4F lever is 3 mm longer
+ *   at each end, so it sits 3 mm higher again and its pin holes and hook land
+ *   where the 1F's do. Side-wall pin holes
+ *   at x −14 (1F) / −17 (2-4F), y 4. "UP" marker: file +x is up.
+ * - link (inner part): U-shaped; its ears (holes at x 8) flank the holder's boss
+ *   on the pivot, its bar (bore at x −7.5, 15.5 mm away) pins between the lever's
+ *   side walls.
+ * - pins: four in one file, two per joint, one from each side. Two stepped
+ *   21.4 mm pins (file x < 0; 5.5 mm thick end at x −20.5) go through the lever
+ *   walls into the link's bar; two plain 18.2 mm pins (x > 0, from x 2.3) go
+ *   through the link's ears into the holder's boss.
  */
-const LATCH = { pocket: 4.1, holderPlateFront: -4.5, pivot: [-3, 6], link: 15.5, linkEar: 8, knuckle: { 1: -22, 2: -25 }, knuckleY: 2 };
+const LATCH = {
+  pocket: 4.1,
+  holderPlateFront: -4.5,
+  pivot: [-3, 6],
+  link: 15.5,
+  linkEar: 8,
+  leverRise: { 1: 4.4, 2: 4.4 + 3 },
+  leverHole: { 1: -14, 2: -17 },
+  leverHoleY: 4,
+  leverHalfW: 24.65,
+  linkHalfW: 19.8,
+  // [file x of the outer end, file y of the axis] for each pin type
+  longPin: [-20.5, 3.05],
+  shortPin: [2.3, 3.3],
+};
 
 /**
  * Boxes stacked inside a drawer module, bottom to top: e.g. a 4F module can
@@ -1077,25 +1102,45 @@ function resolveSustainer({ size, F, d, D, col, slot, build, parts, addBom, addH
   // Holder pivot, relative to the facade's top edge and front face.
   const pivotY = -drop - LATCH.pivot[0];
   const pivotZ = -FIT.facadeT + (LATCH.pivot[1] - LATCH.holderPlateFront);
-  // Lever: walls on the pocket floor; its knuckle hangs on the link below the pivot.
-  const knuckleZ = -LATCH.pocket + LATCH.knuckleY;
-  const dz = knuckleZ - pivotZ;
-  const dy = Math.sqrt(LATCH.link ** 2 - dz ** 2);
-  const knuckleY = pivotY - dy;
-  const cosL = dy / LATCH.link;
-  const sinL = dz / LATCH.link;
-  // Link: ears (file +x) up at the pivot, bar down at the lever's knuckle.
+  // Lever: closed position from the STLs, walls on the pocket floor.
+  const lf = F === 1 ? 1 : 2;
+  const leverY = -drop + LATCH.leverRise[lf];
+  const leverZ = -LATCH.pocket;
+  const holeY = leverY + LATCH.leverHole[lf];
+  const holeZ = leverZ + LATCH.leverHoleY;
+  // Link: ears (file +x) on the pivot, pointing down at the lever's pin holes.
+  const len = Math.hypot(pivotY - holeY, pivotZ - holeZ);
+  const cosL = (pivotY - holeY) / len;
+  const sinL = (pivotZ - holeZ) / len;
   const LINK_ROWS = [
     [0, 0, 1],
-    [cosL, sinL, 0],
-    [-sinL, cosL, 0],
+    [cosL, -sinL, 0],
+    [sinL, cosL, 0],
   ];
   for (const lx of locks) {
     const at = (y, z, zRef = 'front') => ({ to: fp.key, x: lx, yRef: 'top', y, zRef, z });
     place({ partId: holder?.id, role: 'lockholder', attach: at(-drop, 0, 'back'), xform: { origin: [0, LATCH.holderPlateFront, 0], rows: HOLDER_ROWS } });
     place({ partId: inner?.id, role: 'lockinner', attach: at(pivotY, pivotZ), xform: { origin: [LATCH.linkEar, 0, 0], rows: LINK_ROWS } });
-    place({ partId: pins?.id, role: 'lockinner', attach: at(knuckleY, knuckleZ), xform: { origin: [0, 0, 0], rows: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] } });
-    place({ partId: outer?.id, role: 'lockouter', attach: at(knuckleY, knuckleZ), xform: { origin: [LATCH.knuckle[F === 1 ? 1 : 2], LATCH.knuckleY, 0], rows: LATCH_ROWS } });
+    // Pins, one from each side of each joint, outer end flush with the part it enters from.
+    let firstPin = null;
+    for (const side of [-1, 1]) {
+      const rows = side < 0 ? [[1, 0, 0], [0, 1, 0], [0, 0, 1]] : [[-1, 0, 0], [0, 1, 0], [0, 0, -1]];
+      for (const [ref, y, z, halfW, body] of [
+        [LATCH.longPin, holeY, holeZ, LATCH.leverHalfW, -1],
+        [LATCH.shortPin, pivotY, pivotZ, LATCH.linkHalfW, 1],
+      ]) {
+        const pp = place({
+          partId: pins?.id,
+          role: 'lockinner',
+          weight: 0.25,
+          colorFrom: firstPin?.cid,
+          attach: { ...at(y, z), x: lx + side * halfW },
+          xform: { body: [{ axis: 0, sign: body }, { axis: 1, sign: 1 }], origin: [ref[0], ref[1], 0], rows },
+        });
+        firstPin ??= pp;
+      }
+    }
+    place({ partId: outer?.id, role: 'lockouter', attach: at(leverY, leverZ), xform: { origin: [0, 0, 0], rows: LATCH_ROWS } });
   }
 
   const slabel = uni(/^Label for Sustainers/);
