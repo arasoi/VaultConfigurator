@@ -92,6 +92,14 @@ build.
 
 **Colors.** See [Colours](#colours) below.
 
+**Hardware.** The bolts, rods, bearings, stoppers and heat inserts from the hardware list are drawn
+in 3D in metal, each in its own hole with the head type the manual calls for (button heads for
+the M4 bolts and the M6 90 foot bolts, a countersunk head for the M6 50 roof handle bolts, hex
+heads for the handle lock bolts). **Screw finish** switches the bolts between **Silver**, **Brass**
+and **Black**; rods, bearings and stoppers stay steel and the heat inserts brass. Untick
+**Show hardware in 3D** to hide it all. Most screws sit inside the parts, so use a part's card or
+the explode slider to see them; heads show on the back of a backbone and on the wheels.
+
 **Printing.**
 
 - **Split large prints:** uses the Part 1 / Part 2 files where they exist, for depths 6–7 that

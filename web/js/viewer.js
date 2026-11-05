@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { loadPreview } from './api.js';
 import { MOUNT_FACE, interfaceRotation, mountFaceRotation, orientsByInterface } from './orient.js';
 import { COLORS, ORIENT_BY_NAME, ORIENT_BY_ROLE, layout } from './rules.js';
+import { hardwareGeometry, hardwareMaterial, poseHardware } from './hardware.js';
 import { fitAxes } from './viewer-fit.js';
 
 export { fitAxes };
@@ -118,7 +119,7 @@ const unitCylinder = new THREE.CylinderGeometry(0.5, 0.5, 1, 20);
 
 /** Everything (besides the file) that determines a placement's oriented geometry. */
 function geoKey(pl) {
-  return `${pl.role}|${JSON.stringify(pl.expect)}|${pl.iface?.key || ''}|${JSON.stringify(pl.rot || null)}|${pl.body || ''}|${JSON.stringify(pl.xform || null)}|${pl.mount || ''}`;
+  return `${pl.role}|${JSON.stringify(pl.expect)}|${pl.iface?.key || ''}|${JSON.stringify(pl.rot || null)}|${pl.body || ''}|${JSON.stringify(pl.xform || null)}|${pl.mount || ''}|${JSON.stringify(pl.hw || null)}`;
 }
 
 /**
@@ -306,7 +307,8 @@ export class Viewer {
       v.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       ray.setFromCamera(v, this.camera);
       const hit = ray.intersectObjects(this.root.children, false)[0];
-      const key = hit?.object.userData.key;
+      let key = hit?.object.userData.key;
+      if (key && this.objects.get(key)?.hw) key = this.objects.get(key).pl.host; // a bolt picks its part
       this.select(key || null);
       this.onPick?.(key ? this.objects.get(key).pl : null);
     });
@@ -314,6 +316,8 @@ export class Viewer {
 
   /** Material for a placement: its resolved color, else the role default. */
   _mat(pl) {
+    if (pl.hw) return hardwareMaterial(pl.hw.kind, this.build?.hwFinish, this.renderer);
+    if (pl.role === 'rod') return hardwareMaterial('rod', null, this.renderer);
     const hex = this.colorOf?.(pl);
     return hex ? colorMaterial(hex) : materialFor(pl.role);
   }
@@ -378,6 +382,7 @@ export class Viewer {
       const cur = this.objects.get(pl.key);
       if (cur && cur.id === id) {
         cur.pl = pl;
+        if (cur.hw) cur.mesh.material = this._mat(pl); // screw finish may have changed
         continue;
       }
       if (cur) this.root.remove(cur.mesh);
@@ -387,7 +392,15 @@ export class Viewer {
       const o = { id, mesh, pl, dims: null, loaded: false };
       this.objects.set(pl.key, o);
       if (pl.partId) this._load(o);
-      else if (pl.role === 'backbone' || pl.role === 'rod') {
+      else if (pl.hw) {
+        // Purchased hardware: drawn procedurally, posed from its host in _relayout.
+        mesh.geometry = hardwareGeometry(pl.hw);
+        mesh.material = this._mat(pl);
+        mesh.castShadow = true;
+        mesh.visible = false; // until its host is loaded and posed
+        o.loaded = true;
+        o.hw = true;
+      } else if (pl.role === 'backbone' || pl.role === 'rod') {
         // Backbones are drawn as solid blocks (one per level), rods as cylinders.
         o.loaded = true;
         mesh.geometry = pl.role === 'rod' ? unitCylinder : unitBox;
@@ -420,21 +433,31 @@ export class Viewer {
               applyXform(g, o.pl.xform);
               g.userData.orientedBy = 'measured (file coordinates)';
               const s = g.boundingBox.getSize(new THREE.Vector3());
-              return { geometry: creasedNormals(g), dims: [s.x, s.y, s.z] };
+              const r = o.pl.xform.rows;
+              const [ox, oy, oz] = o.pl.xform.origin;
+              const fileToLocal = new THREE.Matrix4().set(...r[0], 0, ...r[1], 0, ...r[2], 0, 0, 0, 0, 1).multiply(new THREE.Matrix4().makeTranslation(-ox, -oy, -oz));
+              return { geometry: creasedNormals(g), dims: [s.x, s.y, s.z], fileToLocal };
             }
-            g.applyMatrix4(fitAxes(pv.size, o.pl.expect));
+            // fileToLocal: every transform applied below, so hardware can be
+            // placed at points measured in this part's file (see hardware.js).
+            const fileToLocal = new THREE.Matrix4();
+            const apply = (m) => {
+              g.applyMatrix4(m);
+              fileToLocal.premultiply(m);
+            };
+            apply(fitAxes(pv.size, o.pl.expect));
             g.computeBoundingBox();
             // Stacking parts: orient by matching their connecting face to the
             // footprint's interface (see orient.js). Others: static rules.
             const named = ORIENT_BY_NAME.find(([re]) => re.test(o.pl.name || ''));
             const auto = !named && orientsByInterface(role) ? await interfaceRotation(g, role, o.pl.iface) : null;
-            g.applyMatrix4(auto ? auto.matrix : extraRotation(named?.[1] || ORIENT_BY_ROLE[role]));
-            if (o.pl.rot) g.applyMatrix4(extraRotation(o.pl.rot));
+            apply(auto ? auto.matrix : extraRotation(named?.[1] || ORIENT_BY_ROLE[role]));
+            if (o.pl.rot) apply(extraRotation(o.pl.rot));
             if (o.pl.body) pickBody(g, o.pl.body);
             // Mount face: the side screwed/resting against its host should be the flat one.
             const face = !auto && !named ? o.pl.mount || MOUNT_FACE[role] : null;
             const flip = face ? mountFaceRotation(g, face) : null;
-            if (flip) g.applyMatrix4(flip.matrix);
+            if (flip) apply(flip.matrix);
             g.userData.orientedBy = auto
               ? `interface:${auto.name} (${auto.score.toFixed(2)})`
               : face
@@ -443,13 +466,13 @@ export class Viewer {
             g.computeBoundingBox();
             const bb = g.boundingBox;
             const c = bb.getCenter(new THREE.Vector3());
-            g.translate(-c.x, -c.y, -c.z);
+            apply(new THREE.Matrix4().makeTranslation(-c.x, -c.y, -c.z));
             const s = bb.getSize(new THREE.Vector3());
-            return { geometry: creasedNormals(g), dims: [s.x, s.y, s.z] };
+            return { geometry: creasedNormals(g), dims: [s.x, s.y, s.z], fileToLocal };
           }),
         );
       }
-      const { geometry, dims } = await this.geoCache.get(ck);
+      const { geometry, dims, fileToLocal } = await this.geoCache.get(ck);
       if (this.objects.get(o.pl.key) !== o) return; // replaced meanwhile
       o.mesh.geometry = geometry;
       o.mesh.material = this._mat(o.pl);
@@ -458,6 +481,7 @@ export class Viewer {
       o.mesh.receiveShadow = true;
       o.mesh.scale.set(1, 1, 1);
       o.dims = dims;
+      o.fileToLocal = fileToLocal;
       o.loaded = true;
     } catch (e) {
       console.warn(e);
@@ -494,6 +518,11 @@ export class Viewer {
         o.mesh.visible = true;
       }
       for (const [key, o] of this.objects) if (!L.transforms.has(key)) o.mesh.visible = false;
+      // Hardware follows its host (after the hosts are placed).
+      const showHw = this.build?.showHardware !== false;
+      for (const o of this.objects.values()) {
+        if (o.hw) o.mesh.visible = showHw && poseHardware(o.mesh, o.pl, this.objects.get(o.pl.host));
+      }
       this.lastLayout = L;
       this._updateSelectionBox();
       this.onLayout?.(L);

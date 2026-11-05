@@ -2,8 +2,8 @@
 
 A self-hosted web app for planning VAULT modular storage builds:
 pick a footprint, stack drawers and sustainers, add a roof, base, wheels, backbone, handles and
-pegboards, see the assembled build in 3D, and download exactly the STL files (plus a hardware list)
-you need to print it.
+pegboards, see the assembled build in 3D (bolts, rods and bearings included, in silver, brass or
+black), and download exactly the STL files (plus a hardware list) you need to print it.
 
 ![The Build tab: build options, 3D view and parts list](docs/images/build-trolley.png)
 

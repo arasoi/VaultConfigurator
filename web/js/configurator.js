@@ -1,6 +1,7 @@
 // Build state + left-hand options panel.
 import { COLOR_GROUPS, FILAMENTS, PRESETS, ensureColors, filamentName, groupColor } from './colors.js';
 import { check, h, section, select, seg } from './dom.js';
+import { HW_FINISHES } from './hardware.js';
 import {
   accessoryLabel,
   boxSplits,
@@ -135,6 +136,8 @@ export function sanitize(build, parts) {
   if (!HANDLES.some((r) => r.key === b.handle)) b.handle = 'knob';
   b.colors = ensureColors(b);
   if (!['full', 'universal'].includes(b.backboneStyle)) b.backboneStyle = 'full';
+  if (!HW_FINISHES.some((f) => f.key === b.hwFinish)) b.hwFinish = 'silver';
+  b.showHardware = b.showHardware !== false;
   b.accessories = (Array.isArray(b.accessories) ? b.accessories : [])
     .filter((a) => a && parts.byId.has(a.id))
     .map((a) => ({ id: a.id, qty: Math.max(1, Math.min(99, Math.round(Number(a.qty) || 1))) }));
@@ -253,6 +256,12 @@ export function renderConfig(root, build, parts, update) {
 
   const colors = renderColors(build, update);
 
+  const hardware = section(
+    'Hardware',
+    h('div.field', h('span', 'Screw finish'), seg(HW_FINISHES.map((f) => ({ value: f.key, label: f.label })), build.hwFinish, set('hwFinish'), 'small')),
+    check('Show hardware in 3D', build.showHardware, set('showHardware'), 'Bolts, rods, bearings, collars and heat inserts'),
+  );
+
   const printing = section(
     'Printing',
     check('Split large prints (depth 6–7)', build.splitPrints, set('splitPrints'), 'Use Part 1 / Part 2 files where available'),
@@ -277,7 +286,7 @@ export function renderConfig(root, build, parts, update) {
     ),
   );
 
-  root.replaceChildren(h('div.field', name), footprint, stack, roof, drawers, base, back, renderAccessories(build, parts, update), colors, printing, actions);
+  root.replaceChildren(h('div.field', name), footprint, stack, roof, drawers, base, back, renderAccessories(build, parts, update), colors, hardware, printing, actions);
 }
 
 function renderLevel(build, i, parts, update) {

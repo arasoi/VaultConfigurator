@@ -255,7 +255,11 @@ XL (±127 mm). Bolts: 8 × M4 10mm (hinges), 8 + 4 per latch × M4 14mm, 7 × M4
 - **Hinges** are placed from measured geometry. The Hinge file is both bottom leaves (screwed
   inside the back wall, 2×2 holes), the Hinge Top file is the lid side (one central plate on S/M,
   two plates on L/XL), the Rods file is both pins. All knuckles share one axis at rim height
-  ~8 mm behind the back wall, and the lid pivots on it.
+  ~8 mm behind the back wall, and the lid pivots on it. The two pins in a Rods file are laid a
+  few degrees apart, so neither lines up with the file's axes. Each pin's axis and head were
+  measured from its shaft (`HINGE_PINS`), and the pin is turned onto the hinge axis: head (a
+  2.75 mm disc) against the knuckles' outer end, shaft running in to meet the other pin in the
+  middle.
 - **Latches** are four parts: Lock Holder, Lock Inner Part (link), Lock Outer Part (lever, 1F or
   2-4F to match the sustainer's height) and a set of pins. They are placed from measured geometry
   and the parts' "UP" markers.
@@ -292,6 +296,41 @@ disk with its flange side against the base, then the cover with its cap facing o
 side. The 6205 bearing sits in the pockets of disk and cover (5.9 + 8.9 mm), and the tyre
 (Ø160 × 40.6) wraps both. The base sits so the tyres touch the ground; the front foot tucks
 2.1 mm further into the base to match.
+
+### Hardware
+
+Purchased hardware is drawn procedurally by `web/js/hardware.js` (no STL): bolts by diameter,
+length and head (ISO 7380 button, ISO 10642 countersunk, ISO 4017 hex), M16 rods, the 6205ZZ
+bearing, the SCSAW stopper and the M6x8x8 insert. Materials are metal `MeshStandardMaterial`s with
+a small generated studio environment map (hardware only, so printed parts keep their matte look);
+the screw finish only changes the bolts.
+
+Each item is a placement with `role: 'hw'`, a `host` placement and a point + direction (`at`,
+`dir`; for bolts the head seat and head-to-tip direction). With `frame: 'file'` the point is in the
+host's preview file coordinates, mapped by the host geometry's `fileToLocal` matrix (the viewer
+records every transform it applies while orienting a part, or the measured `xform`); with
+`frame: 'local'` it is in the host's centred scene frame. The viewer poses hardware after the
+hosts are laid out and hides it until the host has loaded. Clicking a bolt selects its host part.
+
+Head types come from the manual's hardware table. Positions were measured on the STLs (cylinder
+fitting on the hole walls and cross-sections, in preview coordinates):
+
+- **Drawer facades:** M4 14 in Ø10 counterbores 4.1 mm below the front, under the caps (the Facade
+  Cap is hollow for the button head).
+- **Sustainers:** hinge leaves 4 × M4 10 into the back wall; hinge tops 4 × M4 14 up into the lid;
+  lock holders 4 × M4 14 from inside through the holder plate into blind holes in the facade.
+  The 7 × M4 20 per module aren't drawn (no matching holes found).
+- **Wheels:** rod centred on the axle; the bearing straddles disk and cover; the stopper sits on
+  the rod end inside the cover; 6 × M4 25 on a 60 mm radius, heads in the disk's counterbores.
+- **Top Handle:** the M6 50 bolts follow its 45° legs, heads ~5.8 mm under the roof's top face.
+  The heavyweight handle has no bolt holes and gets none.
+- **Feet:** 2 × M6 90 in the foot's blind holes, heads inside the base.
+- **Backbone:** 4 × M4 (drawn at 60) per full-width board through the 14.1 mm end tabs into the
+  long blind holes in the module side walls (1F rows ±18.75, 2F ±44.75); universal boards and the
+  handle lock aren't drawn. Pegboards: M4 40 at ROD_X ± 13 (2F: the four corners). Stationary
+  handle: 8 × M4 60 from the module side, heads in the board's counterbores.
+- **Handle lock knobs:** the M6x8x8 insert at the knob's disc face and an M6 35 hex bolt from the
+  module side. The pull-out handle's 4 × M6 30 countersunk bolts into the rod ends aren't drawn.
 
 ## Parts coverage
 

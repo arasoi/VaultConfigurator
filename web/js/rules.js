@@ -172,6 +172,8 @@ export function defaultBuild() {
     stationaryHandle: false,
     wallMount: false,
     pegboard: 'none',
+    hwFinish: 'silver', // screws: silver, brass or black
+    showHardware: true,
     // bottom -> top
     levels: [
       { id: newId(), layout: 'L', height: 2, cols: [{ type: 'drawer', interior: 'gridfinity' }] },
@@ -287,6 +289,8 @@ export function resolve(build, parts) {
     out.placements.push(full);
     return full;
   };
+  // Purchased hardware, posed from its host part in the viewer (see hardware.js).
+  const hw = (host, spec, at, dir, frame = 'file') => host && place({ role: 'hw', hw: spec, host: host.key, frame, at, dir, fixedColor: true });
 
   if (!levels.length) out.warnings.push('Add at least one level to the stack.');
 
@@ -304,7 +308,7 @@ export function resolve(build, parts) {
       if (col.type === 'sustainer' && layout.drawerOnly) {
         out.warnings.push(`Level ${li + 1}: ${SIZE_LABEL[size]} exists for drawers only.`);
       }
-      const ctx = { size, F, d, D, col, slot, li, build, parts, addBom, addHw, place, missing, state: out };
+      const ctx = { size, F, d, D, col, slot, li, build, parts, addBom, addHw, place, hw, missing, state: out };
       if (col.type === 'drawer') resolveDrawer(ctx);
       else resolveSustainer(ctx);
       if (build.manualSupports && F > 1) {
@@ -365,7 +369,9 @@ export function resolve(build, parts) {
           addBom(th, 1, 'Roof');
           // Stands 51 mm tall over the roof's mount holes (9.8 mm back on S3/M3 grid roofs).
           const mountZ = /^(S|M)3 Grid Roof/.test(roof?.name || '') ? -9.8 : 0;
-          place({ partId: th?.id, role: 'tophandle', mount: 'bottom', attach: { to: rp.key, yRef: 'top', y: -1, yAlign: 'above', z: mountZ }, expect: [126, 51, 37] });
+          const tp = place({ partId: th?.id, role: 'tophandle', mount: 'bottom', attach: { to: rp.key, yRef: 'top', y: -1, yAlign: 'above', z: mountZ }, expect: [126, 51, 37] });
+          const tb = TOP_HANDLE_BOLT;
+          for (const s of [-1, 1]) hw(th && tp, bolt(6, 50, 'countersunk'), [tb.headX, tb.y, s * tb.headZ], [-Math.SQRT1_2, 0, s * Math.SQRT1_2]);
         }
         addHw('M6 50mm bolt', 2);
       }
@@ -386,15 +392,18 @@ export function resolve(build, parts) {
     }
 
     const feet = parts.find({ category: 'modifications', group: 'Feet', size: W });
+    const footBolts = (fp) => {
+      if (!feet) return;
+      for (const s of [-1, 1]) hw(fp, bolt(6, 90), [s * FOOT_HOLES.x, FOOT_HOLES.y, FOOT_HOLES.tipZ - 90], [0, 0, 1]);
+    };
     if (build.base === 'feet') {
       addBom(feet, 2, 'Base & mobility');
       addHw('M6 90mm bolt', 4);
-      place({ partId: feet?.id, role: 'foot', side: 1, expect: [WIDTH[W] - 60, 92, 60.5] });
-      place({ partId: feet?.id, role: 'foot', side: -1, expect: [WIDTH[W] - 60, 92, 60.5] });
+      for (const side of [1, -1]) footBolts(place({ partId: feet?.id, role: 'foot', side, expect: [WIDTH[W] - 60, 92, 60.5] }));
     } else if (build.base === 'wheels') {
       addBom(feet, 1, 'Base & mobility');
       addHw('M6 90mm bolt', 2);
-      place({ partId: feet?.id, role: 'foot', side: 1, expect: [WIDTH[W] - 60, 92, 60.5] });
+      footBolts(place({ partId: feet?.id, role: 'foot', side: 1, expect: [WIDTH[W] - 60, 92, 60.5] }));
       const wheelPart = (re) => parts.find({ category: 'modifications', group: 'Wheels', name: re });
       addBom(wheelPart(/^Tyre/), 2, 'Base & mobility', 'print in TPU');
       addBom(wheelPart(/^Disk/), 2, 'Base & mobility');
@@ -416,8 +425,18 @@ export function resolve(build, parts) {
       for (const side of [-1, 1]) {
         const axle = (off) => ({ to: basePl.key, x: side * (half + off), yRef: 'bottom', y: WHEEL.axleY, zRef: 'back', z: WHEEL.axleZ });
         const at = (partRe, role, off, s) => place({ partId: wheelPart(partRe)?.id, role, side, attach: axle(off), xform: { origin: [0, 0, 0], rows: rows(s) } });
-        at(/^Bushing/, 'wheelcover', WHEEL.bushing, side);
-        at(/^Disk/, 'wheelcover', WHEEL.disk, -side); // flange towards the base
+        const bush = at(/^Bushing/, 'wheelcover', WHEEL.bushing, side);
+        const disk = at(/^Disk/, 'wheelcover', WHEEL.disk, -side); // flange towards the base
+        // The rod (once, from the right bushing: file z points outward), bearing, stopper, cover bolts.
+        if (side > 0 && bush.partId) hw(bush, { kind: 'rod', d: 16, len: ROD_LEN[W] }, [0, 0, -(half + WHEEL.bushing)], [0, 0, 1]);
+        if (disk.partId) {
+          hw(disk, { kind: 'bearing', id: 25, od: 52, w: 15 }, [0, 0, WHEEL_HW.bearingZ], [0, 0, 1]);
+          hw(disk, { kind: 'collar', id: 16, od: 30, w: 10 }, [0, 0, WHEEL_HW.collarZ], [0, 0, 1]);
+          for (let k = 0; k < 6; k++) {
+            const a = ((30 + 60 * k) * Math.PI) / 180;
+            hw(disk, bolt(4, 25), [WHEEL_HW.boltR * Math.cos(a), WHEEL_HW.boltR * Math.sin(a), WHEEL_HW.boltSeat], [0, 0, -1]);
+          }
+        }
         at(/^Cover/, 'wheelcover', WHEEL.cover, side); // cap facing out
         at(/^Tyre/, 'wheel', WHEEL.tyre, side);
       }
@@ -461,6 +480,10 @@ export function resolve(build, parts) {
       // Knob Part 1 is a Ø34 × 7.3 disc with a 28 × 10 stem (14.7 long). The
       // disc's flat face goes into the 6 mm deep pocket; the stem points out.
       const kp = place({ partId: knob1?.id, role: 'knob', mount: 'front', attach: { to: hostKey, x, zRef: 'back', z: 6, zAlign: 'out' }, expect: [34, 34, 22] });
+      if (knob1) {
+        hw(kp, { kind: 'insert', id: 6, od: 8, w: 8 }, [KNOB_HW.x, 0, KNOB_HW.insertZ], [0, 0, 1]);
+        hw(kp, bolt(6, 35, 'hex'), [KNOB_HW.x, 0, KNOB_HW.headZ], [0, 0, 1]);
+      }
       // Part 2 is the grip: a sleeve over the stem, open end towards the disc,
       // closed end 1.5 mm past the stem's end.
       place({ partId: knob2?.id, role: 'keycap', mount: 'back', attach: { to: kp.key, zRef: 'back', z: 11.7 - 1.5, zAlign: 'out' }, expect: [37.8, 13.2, 11.7] });
@@ -518,7 +541,15 @@ export function resolve(build, parts) {
           addBom(bb, 1, 'Backbone & handles');
           addHw('M4 60–100mm bolt', 4);
           const bp = place({ partId: bb?.id, placeholder: !bb, role: 'backbone', slot: { level: li }, bx, expect: [universal ? 63.1 : WIDTH[W], 48 * h - 1, FIT.backboneT] });
-          boards.push({ key: bp.key, bx, h });
+          boards.push({ key: bp.key, bx, h, pl: bp });
+          if (bb && !universal) {
+            // From the back, through the board's ends into the long blind holes in
+            // the module side walls (1F modules: ±18.75; 2F: ±42.75 ≈ the board's
+            // outer holes). Manual: Modifications 9/15. Drawn at the shortest length.
+            const ex = WIDTH[W] / 2 - BOARD_HOLES.endIn;
+            const ey = h === 1 ? 18.75 : 44.75;
+            for (const sx of [-1, 1]) for (const sy of [-1, 1]) hw(bp, bolt(4, 60), [sx * ex, sy * ey, FIT.backboneT / 2 - BOARD_HOLES.endTab], [0, 0, 1], 'local');
+          }
           if (build.connectors) {
             // Connectors for modules: tie this level to the next at the board ends.
             const cn = parts.find({ category: 'modifications', group: 'Backbone', height: h, name: /^Connector for Modules/ });
@@ -539,7 +570,14 @@ export function resolve(build, parts) {
           if (!pg) missing(`${W}${h}F pegboard attachment`);
           addBom(pg, 1, 'Pegboard');
           addHw('M4 40mm bolt', 4);
-          place({ partId: pg?.id, role: 'pegboard', slot: { level: li }, expect: [null, null, FIT.pegboardT] });
+          const pgp = place({ partId: pg?.id, role: 'pegboard', slot: { level: li }, expect: [null, null, FIT.pegboardT] });
+          if (pg) {
+            // Through the board into the backbone: 1F at the four holes, 2F at the outer corners.
+            const R = BOARD_HOLES.rodX[W];
+            const t = build.pegboard === 'ikea' ? 5 : FIT.pegboardT;
+            const holes = h === 1 ? [-1, 1].flatMap((s) => [R - BOARD_HOLES.pair, R + BOARD_HOLES.pair].map((x) => [s * x, 0])) : [-1, 1].flatMap((s) => [-1, 1].map((sy) => [s * (R + BOARD_HOLES.pair), sy * BOARD_HOLES.rowStep]));
+            for (const [x, y] of holes) hw(pgp, bolt(4, 40), [x, y, -t / 2], [0, 0, 1], 'local');
+          }
         }
       }
     }
@@ -579,6 +617,16 @@ export function resolve(build, parts) {
     // the module side), grip parallel to the back. Below the handle lock if any.
     const board = boards.findLast((b) => b.bx <= 0);
     const host = board?.key || lockKey;
+    if (sh && board && !universal && board.pl.partId) {
+      // From the module side (heads in the board's counterbores) into the handle's legs.
+      const R = BOARD_HOLES.rodX[W];
+      const yc = (board.h - 1) * BOARD_HOLES.rowStep;
+      for (const s of [-1, 1]) {
+        for (const x of [R - BOARD_HOLES.pair, R + BOARD_HOLES.pair]) {
+          for (const dy of [-BOARD_HOLES.pair, BOARD_HOLES.pair]) hw(board.pl, bolt(4, 60), [s * x, yc + dy, FIT.backboneT / 2 - BOARD_HOLES.cbore], [0, 0, -1], 'local');
+        }
+      }
+    }
     place({
       partId: sh?.id,
       placeholder: !sh,
@@ -674,11 +722,94 @@ export function drawerFacadeLayout(size, F) {
  * module, the leaves' outer end, and per-file frame data for the pins/plates.
  */
 const HINGE_GEOMETRY = {
-  S: { leaves: [-51.9, 51.9], leafOuter: 71.9, tops: [0], topKx: 0, rodHeadX: -42.2, rodAxisY: 1.7 },
-  M: { leaves: [-69.3, 69.3], leafOuter: 89.3, tops: [0], topKx: 0, rodHeadX: -42.2, rodAxisY: 1.7 },
-  L: { leaves: [-86.75, 86.75], leafOuter: 111.75, tops: [-41.3, 41.3], topKx: 8.7, rodHeadX: -52.5, rodAxisY: 1.9 },
-  XL: { leaves: [-131.35, 131.35], leafOuter: 156.35, tops: [-85.9, 85.9], topKx: 8.7, rodHeadX: -52.5, rodAxisY: 1.9 },
+  S: { leaves: [-51.9, 51.9], leafOuter: 71.9, tops: [0], topKx: 0 },
+  M: { leaves: [-69.3, 69.3], leafOuter: 89.3, tops: [0], topKx: 0 },
+  L: { leaves: [-86.75, 86.75], leafOuter: 111.75, tops: [-41.3, 41.3], topKx: 8.7 },
+  XL: { leaves: [-131.35, 131.35], leafOuter: 156.35, tops: [-85.9, 85.9], topKx: 8.7 },
 };
+/**
+ * Hinge pins (Rods files): two pins per file, laid a few degrees apart, so
+ * neither is aligned with the file's axes (the preview frame follows the pair).
+ * Per pin (keyed by the sign of its file y), measured from the shaft: the
+ * centre of the head's outer face and the axis direction from head to tip.
+ * The head is a 2.75 mm disc; its inner face sits on the knuckles' outer end.
+ */
+const HINGE_PINS = {
+  headLen: 2.75,
+  'S-M': {
+    1: { head: [-41.719, 1.54, -1.83], axis: [0.99748, 0.06952, -0.01442] },
+    [-1]: { head: [41.718, -1.57, -1.847], axis: [-0.99752, -0.0689, -0.01406] },
+  },
+  'L-XL': {
+    1: { head: [-52.133, 1.782, -1.921], axis: [0.99859, 0.05236, -0.00823] },
+    [-1]: { head: [52.134, -1.799, -1.922], axis: [-0.99858, -0.05267, -0.00815] },
+  },
+};
+
+/**
+ * Rotation rows (file → scene) that turn direction u onto s·X, keeping the
+ * file's y as close to up as possible.
+ */
+function axisRows(u, s) {
+  const l = Math.hypot(...u);
+  const a = u.map((v) => v / l);
+  const r1 = a.map((v) => v * s);
+  const d = a[1];
+  let r2 = [-d * a[0], 1 - d * a[1], -d * a[2]];
+  const l2 = Math.hypot(...r2);
+  r2 = r2.map((v) => v / l2);
+  const r3 = [r1[1] * r2[2] - r1[2] * r2[1], r1[2] * r2[0] - r1[0] * r2[2], r1[0] * r2[1] - r1[1] * r2[0]];
+  return [r1, r2, r3];
+}
+
+// ---------------------------------------------------------------- hardware positions
+//
+// Bolts, rods, bearings and inserts drawn in 3D (see hardware.js). Head types
+// follow the manual's hardware table: M4 bolts and the M6 90 foot bolts are
+// button heads, M6 50 (roof handle) and M6 30 (pull-out handle) countersunk,
+// M6 35 hex. Positions are measured on the STLs, in each host part's preview
+// file coordinates (frame 'file') or in its centred scene frame ('local').
+// Bolts give the head's seat and the direction from head to tip.
+
+const bolt = (d, len, head = 'button') => ({ kind: 'bolt', d, len, head });
+
+/** Hinge leaves: four M4 holes per leaf (x, ±z), head seat y on the inner face, shaft +y into the back wall. */
+const HINGE_LEAF_HOLES = {
+  'S-M 1F Hinge': { xs: [-15.4, 0], z: 11.5, y: 1.9 },
+  'S-M 2-4F Hinge': { xs: [-25, 9.6], z: 11.5, y: 2.26 },
+  'L-XL 1F Hinge': { xs: [-15.4, 0], z: 16.5, y: 1.64 },
+  'L 2-4F Hinge': { xs: [-25, 9.6], z: 16.5, y: 1.7 },
+};
+/** Hinge tops: four M4 holes per plate (y, ±z), head seat x under the plate, shaft +x up into the lid. */
+const HINGE_TOP_HOLES = { ys: [2, 22], S: { x: 0, z: 24.9 }, M: { x: 0, z: 42.9 }, 'L-XL': { x: 8.69, z: 13.5 } };
+/** Lock holder: four M4 holes (±x, ±z) through its 5 mm plate into blind holes in the facade. */
+const LOCK_HOLDER_HOLES = { x: 4.5, z: 30.7, y: -9.45 };
+/** Drawer facade: the M4 14 heads sit in Ø10 counterbores 4.1 mm below the front (local z). */
+const FACADE_BOLT_SEAT = 5 - 4.1; // facade 10 mm thick, centred
+/**
+ * Wheel disk: six M4 25 holes on a 60 mm radius (heads in counterbores on the
+ * outer face), the 6205ZZ bearing half in the disk, half in the cover, and the
+ * SCSAW stopper on the rod end inside the cover. Disk file coordinates.
+ */
+const WHEEL_HW = { boltR: 60, boltSeat: 6.86, bearingZ: -12.45, collarZ: -27.95 };
+/** Top Handle: M6 50 countersunk bolts run up its 45° legs from under the roof (handle file; bottom at +x). */
+const TOP_HANDLE_BOLT = { headX: 30.36, headZ: 19.84, y: 0.25 };
+/** Feet: two M6 90 holes, open on one face, blind 4.4 mm before the other (foot file). */
+const FOOT_HOLES = { x: 21.52, y: -16, tipZ: 24.85 };
+/**
+ * Backbone boards: module holes 8.15 mm in from each end, through the 14.1 mm
+ * end tabs (on the module side); pegboard / stationary handle holes at
+ * ROD_X ± 13, in rows 26 mm apart, the handle bolts' heads in 4 mm counterbores
+ * on the module side.
+ */
+const BOARD_HOLES = { endIn: 8.15, endTab: 14.1, rodX: { S: 40.4, M: 85, L: 122.8, XL: 167.4 }, pair: 13, rowStep: 26, cbore: 4 };
+/**
+ * Handle lock knob: the M6x8x8 heat insert sits in the Ø7.2 bore at the disc
+ * face (file z −10.98); the M6 35 hex bolt comes from the module side through
+ * the lock (29 mm below the 6 mm knob pocket) into the insert (knob file).
+ */
+const KNOB_HW = { x: -0.12, insertZ: -6.98, headZ: -10.98 - 29 };
+
 /** Knuckle bore centre (x, y) of the upper leaf in each Hinge file. */
 const HINGE_LEAF_KNUCKLE = {
   'S-M 1F Hinge': [16.9, 20.4],
@@ -768,7 +899,7 @@ export function boxSplits(F, heights = [1, 2, 4]) {
   return out;
 }
 
-function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, addHw, place, missing, state }) {
+function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, addHw, place, hw, missing, state }) {
   const w = WIDTH[size];
   const module = parts.find({ category: 'drawers', group: 'Modules', size, depth: d, height: F });
   if (!module) missing(`${SIZE_LABEL[size]}${d} ${F}F drawer module`);
@@ -843,6 +974,7 @@ function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, add
       const fl = drawerFacadeLayout(bs, h);
       const fp = place({ partId: facade?.id, role: 'facade', lvl, h, slot: { ...slot, x: bcx, width: bw }, expect: [bw, fl.H, FIT.facadeT] });
       addHw('M4 14mm bolt', fl.holes.length);
+      if (facade) for (const c of fl.holes) hw(fp, bolt(4, 14), [c.x, c.y, FACADE_BOLT_SEAT], [0, 0, -1], 'local');
 
       if (!keyPart) missing('drawer key / handle');
       addBom(keyPart, 1, 'Drawers', build.handle === 'hidden' ? 'hidden key handle' : 'handle');
@@ -1045,7 +1177,7 @@ function resolveDrawer({ size, F, d, D, col, slot, li, build, parts, addBom, add
   }
 }
 
-function resolveSustainer({ size, F, d, D, col, slot, build, parts, addBom, addHw, place, missing }) {
+function resolveSustainer({ size, F, d, D, col, slot, build, parts, addBom, addHw, place, hw, missing }) {
   const w = WIDTH[size];
   const big = size === 'L' || size === 'XL';
   let interior = col.interior || 'flat';
@@ -1112,6 +1244,9 @@ function resolveSustainer({ size, F, d, D, col, slot, build, parts, addBom, addH
       xform: { body: { axis: 1, sign: 1 }, origin: [leafKnuckle[0], leafKnuckle[1], 0], rows: [[0, 0, -1], [1, 0, 0], [0, -1, 0]] },
     });
     firstLeaf = firstLeaf || lp2;
+    // M4 10 through the leaf into the back wall.
+    const lh = HINGE_LEAF_HOLES[hinge?.name];
+    if (lh) for (const x of lh.xs) for (const s of [-1, 1]) hw(lp2, bolt(4, 10), [x, lh.y, s * lh.z], [0, 1, 0]);
   });
   let firstTop = null;
   hg.tops.forEach((tx) => {
@@ -1126,21 +1261,25 @@ function resolveSustainer({ size, F, d, D, col, slot, build, parts, addBom, addH
       xform: { body: hg.tops.length > 1 ? { axis: 0, sign: 1 } : null, origin: [hg.topKx, -21.5, 0], rows: [[0, 0, 1], [1, 0, 0], [0, 1, 0]] },
     });
     firstTop = firstTop || tp;
+    // M4 14 up through the plate into the lid.
+    const th = hingeTop && HINGE_TOP_HOLES[sm ? size : 'L-XL'];
+    if (th) for (const y of HINGE_TOP_HOLES.ys) for (const s of [-1, 1]) hw(tp, bolt(4, 14), [th.x, y, s * th.z], [1, 0, 0]);
   });
-  // Pins: head outward at each end of the hinge line, shaft running inward.
+  // Pins: head outward at each end of the hinge line, shaft running inward
+  // along the knuckles. Each pin lies a few degrees off the file's axes (see
+  // HINGE_PINS), so its frame is built from its own measured axis.
   let firstRod = null;
+  const hingePins = HINGE_PINS[sm ? 'S-M' : 'L-XL'];
   for (const side of [-1, 1]) {
+    const body = side < 0 ? 1 : -1; // left: the pin at file y > 0; right: the other one
+    const pin = hingePins[body];
     const rp = place({
       partId: rods?.id,
       role: 'hinge',
       weight: 0.5,
       colorFrom: firstRod?.cid,
-      attach: { to: mp.key, x: side * (hg.leafOuter + 3.7), ...axis },
-      xform: {
-        body: { axis: 1, sign: 1 },
-        origin: [hg.rodHeadX, hg.rodAxisY, 0],
-        rows: side < 0 ? [[1, 0, 0], [0, 1, 0], [0, 0, 1]] : [[-1, 0, 0], [0, 1, 0], [0, 0, -1]],
-      },
+      attach: { to: mp.key, x: side * (hg.leafOuter + HINGE_PINS.headLen), ...axis },
+      xform: { body: { axis: 1, sign: body }, origin: pin.head, rows: axisRows(pin.axis, -side) },
     });
     firstRod = firstRod || rp;
   }
@@ -1181,7 +1320,10 @@ function resolveSustainer({ size, F, d, D, col, slot, build, parts, addBom, addH
   ];
   for (const lx of locks) {
     const at = (y, z, zRef = 'front') => ({ to: fp.key, x: lx, yRef: 'top', y, zRef, z });
-    place({ partId: holder?.id, role: 'lockholder', attach: at(-drop, 0, 'back'), xform: { origin: [0, LATCH.holderPlateFront, 0], rows: HOLDER_ROWS } });
+    const hp = place({ partId: holder?.id, role: 'lockholder', attach: at(-drop, 0, 'back'), xform: { origin: [0, LATCH.holderPlateFront, 0], rows: HOLDER_ROWS } });
+    // M4 14 from inside, through the holder plate into blind holes in the facade.
+    const lh = LOCK_HOLDER_HOLES;
+    if (holder) for (const sx of [-1, 1]) for (const sz of [-1, 1]) hw(hp, bolt(4, 14), [sx * lh.x, lh.y, sz * lh.z], [0, 1, 0]);
     place({ partId: inner?.id, role: 'lockinner', attach: at(pivotY, pivotZ), xform: { origin: [LATCH.linkEar, 0, 0], rows: LINK_ROWS } });
     // Pins, one from each side of each joint, outer end flush with the part it enters from.
     let firstPin = null;
